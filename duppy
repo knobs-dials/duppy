@@ -937,7 +937,7 @@ def main():
  Examples:
     
       # "I don't care which version you keep"
-      duppy -v -d -n --keep-one-random /data/Video
+      duppy -v -d -n --elect-one-random /data/Video
 
       # "Right, I just downloaded a load of images, and I have most already. Clean from this new dir"
       duppy -v -d -n --delete-path '/data/images/justdownloaded/' /data/images      
