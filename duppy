@@ -1,1 +1,1171 @@
-../duppy
+#!/usr/bin/python -O
+""" Duplicate file finder via incremental content comparison.
+    Usually reads <10% of the data, regularly <1%.
+    See the README for an introduction.
+    
+    
+  How it works:
+    Initial sets are based on files with identical size
+    For each such set
+      - We read a chunk of data from from each file in a set, and make new sets for files with the same data.
+      - When a new set has one item, it is unique.
+      - When a new set has no more data to read, all are dupliates of each other
+
+
+  On links
+    This script should be safe to use around symlinks (deals with symlink loops)
+    and around hardlinks (uses inodes and device enumeration to detect them).
+    
+    We do *not* show files with numerous hardlinks, as they are considered one file.
+    It may be useful to show hardlinks in the output, but deleting them won't save you any space.
+      
+
+  On runtime and IO
+    ...mostly determined by amount of files, and, in pathological cases, additionally in file size.
+  
+    Amount because we tend to have the first block of many files even if they are all unique.
+  
+    File size in the fairly pathological case where large files are unique late in the file.
+    (a collection of all-identical files means we have to read everything, which it will do
+     slower than the complete-hash solution because we would do a lot more seeks - the
+     bottleneck becomes IO latency)  
+
+    File size also helps in a positive way, in part because larger files will often mean
+    many fewer files, and more unique-sized files.
+  
+    Deduping 2TB of videos is likely to be _much_ faster than deduping 50GB of images.
+    Consider that if there are just as many cases to check and all are decided in ~100KB,
+    the image case still means a lot more files (and therefore more reads and seeks).
+
+        
+  On memory use
+    Allocated memory will be     <the block size>  times  <amount of distinct next blocks>
+
+    Usually you have a few hundredish-KB blocks and at most a few dozen files,
+    making for a few MB total (plus whatever the garbage collector hasn't gotten to yet),
+
+    A fairly pathological case is all unique files of the same size.
+    ...which can happen, consider raw image sensor data.
+      
+
+
+  On reading files in chunks
+    For single drives reading 64KB or 128KB at once is the highest sensible value.
+    You'll see little speed increase with larger values - in part because most unique files
+    are often distinct within the first couple dozen KB.
+    
+    Many that are not decided by ~128KB are likely to be large identical files.
+    Starting with smaller reads can save a small amount of time, and more memory,
+    while larger later blocks lessen seek latency somewhat.
+      (also since we reopen files a lot to avoid crossing OS open-file limits
+       TODO: allow an option to avoid that),
+
+    In some quick tests I got a good balance with an initial block size of 64KB (-b 64)
+    and a maximum of 256KB (-m 256).
+    In large-stripe RAID arrays it can make sense to use higher values for both.
+
+    
+  Other implementation notes
+
+    Some files are likelier to differ at the end than the beginning - often because of metadata of some sort
+    (e.g. MP3s with only ID3v1 tags) so our second read reads from both ends.
+    TODO: allow disabling this via an option.
+
+
+  Delete logic
+    If you have a few files you want to remove, you can copy-paste filenames from the output
+    (the single/doublequotes are there for ease)
+
+    ...but sometimes you have large sets and have some governing logic about what you want to keep and remove.
+
+    Within a set, start with all UNKNOWN, and actively mark all files as KEEP or DELETE based on matches,
+    mostly from patterns within filenames.
+    KEEPs overrule DELETEs.   (enumeration used is keep=2, delete=1, unknown=0, so that a simple max() will do)
+    After that, if a set has no UNKNOWNs and at least one KEEP, we delete any marked DELETE.
+
+    See help for the types of rules.
+
+
+  CONSIDER:
+  - homedir store of, roughly,    abspath -> (size, mtime,ctime, hash_of_first_10K)
+    so that later runs can eliminate various things without a lot of filesystem access
+"""
+import sys
+import os
+import stat
+import time
+import math
+import random
+import re
+
+from duppy_indexer import Indexer
+import duppy_rules
+
+try:
+    import setproctitle
+    setproctitle.setproctitle( os.path.basename(sys.argv[0]) )
+except ImportError:
+    pass
+
+
+
+try:
+    from helpers_shellcolor import tty_size
+except ImportError:
+    def tty_size(): # *nix-only dumber version of the above
+        " fetches current terminal size (using stty) "
+        import string
+        fp = os.popen('stty -a', 'r')
+        ln1 = fp.readline()
+        fp.close()
+        if not ln1:
+            raise ValueError('tty size not supported for input')
+        vals = {'rows':None, 'columns':None}
+        for ph in string.split(ln1, ';'):
+            x = string.split(ph)
+            if len(x) == 2:
+                vals[x[0]] = x[1]
+                vals[x[1]] = x[0]
+        return vals
+try:
+    termcols = tty_size()['cols']
+    termcols = int(termcols)
+except: #Not on *nix, the int cast failing on non-information, etc. Fall back on the assumption that:
+    termcols = 80
+
+
+
+### Helper functons
+
+def kmg(bytes,kilo=1024): 
+    """ Readable size formatter.
+        For example, kmg(3653453) returns '3.48M',
+        Binary-based kilos by default. Specify kilo=1000 if you want decimal kilos.
+        Yes, could use syntax-fu to make it shorter, but this is more tweakable.
+    """
+    mega = kilo*kilo
+    giga = mega*kilo
+    tera = giga*kilo
+    if abs(bytes)>(0.80*tera):
+        showval = bytes/float(tera)
+        if showval<7: 
+            return "%.1fT"%(showval)
+        else:
+            return "%.0fT"%(showval)
+    if abs(bytes)>(0.95*giga):
+        showval = bytes/float(giga)
+        if showval<7: # e.g. 1.3GB but 15GB
+            return "%.1fG"%(showval)
+        else:
+            return "%.0fG"%(showval)
+    if abs(bytes)>(0.9*mega):
+        showval = bytes/float(mega)
+        if showval<7:
+            return "%.1fM"%(bytes/float(mega))
+        else:
+            return "%.0fM"%(bytes/float(mega))
+    if abs(bytes)>(0.85*kilo):
+        showval = bytes/float(kilo)
+        if showval<10:
+            return "%.1fK"%(bytes/float(kilo))
+        else:
+            return "%.0fK"%(bytes/float(kilo))            
+    else:
+        return "%d"%bytes
+
+
+def parse_kmg(str, kilo=1024):
+    " E.g. '1MB' -> 1048576.   Quick and dirty implementation, could stand cleaning "
+    try:
+        ns = str.rstrip('kmgtbKMGTBiI')
+        ret = float(ns)
+        sl = str.lower()
+        if 'k' in sl:
+            ret *= kilo
+        if 'm' in sl:
+            ret *= kilo*kilo
+        if 'g' in sl:
+            ret *= kilo*kilo*kilo
+        if 't' in sl:
+            ret *= kilo*kilo*kilo*kilo
+        ret=int(ret)
+        return ret
+    except Exception as e:        
+        print( "Didn't understand value %r"%ns )
+        print( e )
+        raise
+
+
+
+
+def sameline(s, stream=sys.stderr):
+    """ Used for newlineless tally: Prints the given string on the given stream (defaults to stderr),
+        then clears the rest of the line and goes to the start of the same line.
+        (so to go on with normal printing you'ld want a sameline('') first)
+
+        Requries ANSI capability.
+        TODO: test for that.
+
+        Tries to prevent new lines caused by wrapping of long strings (filename)
+        by printing only first so-many characters of a filename.
+    """
+    stream.write(s[:termcols-2])
+    stream.write('\x1b[K\r') #clear line after cursor, send cursor to start of line
+    stream.flush()
+    
+
+
+
+class ExactDupes(Indexer):
+    ''' Looks for exact file content duplicates.
+        Expands on the indexer class, wrapping its state with some of our own '''
+    def __init__(self,
+                 # indexer stuff:
+                 minlen=1, maxlen=None,
+                 ignore_dirnames=(),
+                 ignore_abspaths=(),
+                 # main work stuff
+                 stoplen=0,
+                 follow_sym=False, # indexer
+                 verbose=False,
+                 readsize=64*1024, maxreadsize=256*1024,
+
+                 # rule stuff
+                 delete=False, dry_run=True, rules=None):
+        ''' The first few arguments are handed to the indexer.
+              minlen allows checking for only larger files.   Default is 1 to ignore zero-length files.
+ 
+            stoplen allows "okay, 1GB of this 300GB file matched, just assume they're identical".
+            This is a shortcut that makes sense in some contexts.  Default is 0, meaning 'don't assume this'
+ 
+            if delete==True, will add a phase where we apply rules to sets to decide what to delete
+              if dry_run==True,  will only report what it would delete
+              if dry_run==False, will also actually delete.
+ 
+            if verbose==True or 1, progress is printed on stderr.
+               verbose is >1, debug output is emitted.
+ 
+            see module docstring for notes on readsize
+        '''
+        Indexer.__init__(self, print_callback=sameline,
+                         ignore_dirnames=ignore_dirnames,
+                         ignore_abspaths=ignore_abspaths,
+                         ) # TODO: add dirs to ignore
+
+        self.i=0
+        
+        # indexer
+        self.minlen = minlen
+        self.maxlen = maxlen
+        self.follow_sym = follow_sym
+
+        self.stoplen = stoplen
+        self.skipped_assumptions = 0
+
+        self.delete  = delete
+        self.dry_run = dry_run
+        self.rules   = rules
+        
+        self.verbose=verbose
+        if self.verbose == True:
+            self.verbose=1
+
+        #shared
+        self.last_feedback     = time.time()
+        self.feedback_interval = 0.29 # seconds
+
+        #for work()
+        self.readsize    = readsize
+        self.maxreadsize = maxreadsize
+        self.dup_sets    = {} # size -> a list of lists of filenames (filled by work())
+        
+        self.stat_work_time       = 0
+        self.stat_diskread        = 0
+        self.stat_diskread_count  = 0
+        self.stat_total_file_size = 0
+        
+        self.stat_trivial         = 0
+        self.stat_nontrivial      = 0
+        self.stat_times           = []
+        self.time_thresh          = 0.1
+
+
+    def work(self,quiet=False):
+        ''' Does the work of figuring out which of the currently add()ed files are duplicates '''
+        #if self.verbose>=1:
+        #    sameline("%d files added to be checked"%self.nfiles)
+        
+        ncases = len(self.persize)
+        handled_cases = 0
+        handled_files = 0
+
+        start_time = time.time()
+
+        def showupdate():
+            ' using semi-synthetic percentage (could just use total size instead?) '
+            now = time.time()
+            if now - self.last_feedback > 0.09:
+                self.last_feedback = now
+                
+                perc= (100.*(handled_cases+handled_files))/(ncases+self.nfiles)
+                
+                #verbose, but hopefully readable. Tends to the pessimistic.
+                frag_files = float(handled_files)/float(self.nfiles)
+                time_left_str=''
+                time_spent = now - start_time
+                if time_spent>12. and (frag_files>0.15 or handled_files>500): # abstain from guessing before then
+                    time_left  = (time_spent/( frag_files )) - time_spent # yay stupid overall average
+                    left_mins = int((30.+time_left)/60.)   # add 30 to not just int-floor it
+                    if left_mins>0:
+                        time_left_str=', perhaps %d minute%s left'%(left_mins, left_mins!=1 and 's' or '') # hacy hacky 's' logic'
+                    elif time_left>2:
+                        time_left_str=', perhaps %d seconds left'%( int(1 + time_left/10)*10) 
+                
+                sameline('Checked %d of %d files    [ %4.1f%% done%s ] '%(
+                    handled_files,self.nfiles,
+                    perc,
+                    time_left_str,
+                    ))
+
+                #sameline('Checked %d of %d sets,  %d of %d files.   [ %4.1f%% done%s ] '%(
+                #    handled_cases,ncases,
+                #    handled_files,self.nfiles,
+                #    perc,
+                #    time_left_str,
+                #    ))
+        try:
+            ###
+            keys_which_are_sizes = list(self.persize.keys())
+
+            # Time statistics make the most sense when we shuffle the things to do
+            #  (not ideal for cache, but that's hard to predict without )
+            random.shuffle(keys_which_are_sizes)
+
+            # Doing the smallest first
+            #print "Doing the smallest first - expect a fast start and slow finish"
+            #keys_which_are_sizes.sort() 
+
+            #print keys_which_are_sizes
+
+
+            self.stat_total_file_size=0
+            ### Most of the work
+            for size in keys_which_are_sizes:
+                lst = self.persize[size]
+
+                self.stat_total_file_size += len(lst)*size # For stats later (worst-case read size)
+
+                if len(lst)==1: # The logic below would catch these fine - but would do IO we can avoid
+                    handled_cases     += 1
+                    self.stat_trivial += 1
+                    handled_files     += len(lst)
+                    continue
+
+                else:
+                    set_start_time = time.time()
+                    self.stat_nontrivial += 1
+                    offset = 0
+
+                    # workset is a map from last_so_many_bytes -> filenames_with_those_bytes,
+                    # In other words, each entry is an unresolved bucket
+                    workset={'':lst} # initialize with '' -> everything
+
+                    if self.verbose >= 3:
+                        print( '\n\n=================================================================================' ) 
+                        print( 'Starting on new set,  for %d-byte files  -  there are %d files, namely:'%(size, len(workset[''])) )
+                        for fn in workset['']:
+                            print( "     %r"%fn )
+
+                    loopcounter=0 
+                    while len(workset)>0: # as long as there are unresolved buckets left...
+                        current_readsize = min(self.maxreadsize,  2**max(loopcounter-1,0) * self.readsize  )
+                        # loopcounter-1 so that the second (start-and-end) read still uses the initial block size 
+                        loopcounter+=1
+
+                        #if self.verbose>=2 and offset>0:
+                        #    print( '[ss:%s] unresolved set (currently %d buckets)  at offset %s'%(size,len(workset),offset) )
+
+                        newset ={} #while looping over workset, we create a new one, into which still-undecided cases will go,
+                        tempset={} # for a next round
+
+                        last_read_size = 0
+                        for k in workset:  # for each bucket of files (a list of filenames)
+
+                            try: # Raises are dealt with at bucket level, so that we don't quit processing everything
+                                 # When someone removes one file behind this app's back
+
+                                for fn in workset[k]:
+                                    # for each file(name) in the bucket, read the next bit of data
+
+                                    # the idea was to allow O_DIRECT for benchmarking, but that imposes various restrictions
+                                    flags = getattr(os, 'O_NOATIME', 0) # avoid atime updates if we can
+                                    fd    = os.open(fn, os.O_RDONLY|flags)
+                                    fob   = os.fdopen(fd, 'rb')
+
+                                    # The *second* read reads a block from both the start and end of a file.
+                                    # The idea is that for some file types this will resolve faster, in particular
+                                    #   those with metadata stuck at the end (e.g. MP3 with ID3v1)
+                                    # We don't do this the first read, to avoid the extra seeks where the first
+                                    #   read already disambiguates
+                                    # Yes, we end up reading that last block twice, but it's fairly insignificant time
+
+                                    if loopcounter!=2: # all but the second read read
+
+                                        there_already = fob.tell()==offset
+
+                                        if self.verbose>=3: 
+                                            if not there_already:
+                                                print( "iteration %d, seeking to %d for %d bytes"%(loopcounter, offset, current_readsize) )
+
+                                        if not there_already: # TODO: see if there's any point to this.
+                                            fob.seek(offset)
+                                        d = fob.read(current_readsize)
+                                        self.stat_diskread_count += 1
+
+                                    else:
+                                        if self.verbose>=3: 
+                                            print( "iteration %d, seeking to %d for %d bytes"%(loopcounter, offset, current_readsize) )
+                                        d = fob.read(current_readsize) # from start of file
+                                        self.stat_diskread_count += 1
+                                        # avoid read overlaps on small files (doesn't break logic and would be cached, but still extra work)
+                                        restsize = min(current_readsize, size-current_readsize) 
+                                        # and only do the additional seek and read when there is ''any'' extra data to read:
+                                        if restsize>0:
+                                            if self.verbose>=3:
+                                                print( "             ...also seeking to %d  for %d more bytes"%( size-restsize, restsize ) )
+                                            fob.seek(size-restsize)  # SEEK_END was only added in py2.5
+                                            extra_read_data = fob.read(restsize) # ...AND from end of file.
+                                            #print "got %d"%len(extra_read_data)
+                                            d += extra_read_data
+                                            self.stat_diskread_count += 1
+                                            # For small files, the next loop may be all duplicate data. Oh well?
+                                        elif self.verbose>=3:
+                                            print("")
+
+                                    fob.close()
+
+
+                                    self.stat_diskread += len(d) 
+
+                                    if len(d)<=0: #then we're at EOF, the whole bucket is a dupe (since they are all the same size)
+                                        # and this is the first entry of the bucket, we can terminate for this bucket now.
+                                        if size not in self.dup_sets:
+                                            self.dup_sets[size] = []
+                                        self.dup_sets[size].append( workset[k] )
+                                        break  # we're done
+
+                                    elif self.stoplen!=0 and offset>self.stoplen:
+                                        #if verbose:
+                                        sameline('')
+                                        print( "Assuming %d files (%s) are identical after %sB (of %sB)"%(
+                                            len(workset[k]),
+                                            ', '.join(repr(e) for e in workset[k]),
+                                            kmg(self.stoplen),
+                                            kmg(size),
+                                            ) )
+                                        # CONSIDER: Could keep track of how much data we skipped.
+
+                                        self.skipped_assumptions += 1
+                                        if size not in self.dup_sets: # maybe collect into a separate set? So that we can add an option 'yes, I'm sure to apply delete logic to those too'?
+                                            self.dup_sets[size] = []
+                                        self.dup_sets[size].append( workset[k] )
+                                        break  # we're done
+
+                                    else: # not at EOF, so not decided: do this file's part of filling tempset with newly keyed buckets
+                                        if d not in tempset:
+                                            tempset[d] = []
+                                        tempset[d].append(fn)
+                                    #Technically, there's also the len(d)<current_readsize case, currently included in the second.
+
+
+                            except (IOError, OSError) as e: # Most likely means that the open() failed, because file was moved/removed
+                                print( "Filesystem error, abandoning set (possibly a moved/deleted file?) - %s"%str(e) )
+                                print( e )
+                                # DEBUG:
+                                #raise
+                                tempset = {} # forget this bucket
+                                # Basically, just break off this bucket
+                                # TODO: do this properly, or at least check that it makes sense - it currently leaves the bucket sort of half finished
+                                # (though if my sleep deprived eyes don't fail me, this means newset will simply be empty)
+
+
+                        # We've resorted workset into tempset
+                        #  No inspect how distinct things are, and create a new set for the next loop
+
+                        # anything that is now not unique  is copied from tempset to the next round's workset
+                        if self.verbose >= 3:
+                            print("") # The number of buckets can vary
+                            print( " After iteration %d     there are %d buckets    (after %d blocks, offset %d)"%(loopcounter, len(tempset),loopcounter, offset) )
+                        bi=0
+                        for data in tempset:
+                            bi += 1
+                            tsk = tempset[data]
+                            lendata = len(data)                            
+                            if len(tsk)==1:
+                                # Just one item with this data
+                                if self.verbose >= 3:
+                                    print( '  -> Bucket %d has one file, implicitly unique'%(bi) )
+                                    for fn in tempset[data]:
+                                        print( '         %r'%fn )
+
+                            elif lendata<current_readsize  and  len(tsk)>1:
+                                # We just read up to EOF, and have the same data for each in this set
+                                #   then these are duplicates, and we can avoid some IO (discovering that)
+                                if size not in self.dup_sets:
+                                    self.dup_sets[size] = []
+                                self.dup_sets[size].append( tsk )
+                                if self.verbose >= 3:
+                                    print( "  -> Bucket %d has no more data, so contains %d duplicate files:"%(bi,len(tsk)) )
+                                    for fn in tempset[data]:
+                                        print( '         %r'%fn )
+
+                            elif len(tsk)>1: # lendata==current_readsize  and 
+                                #print( "Don't know yet (%d)"%len(tsk) # so copy into what will be the next round's workset )
+                                newset[data] = tsk
+                                if self.verbose >= 3:
+                                    print( '  -> Bucket %d has %d files (data starting with %r)'%(bi,len(tempset[data]),data[:25]) )
+                            else:
+                                raise RuntimeError('Bad logic in bucket decision (further info: %s %s %s)'%(lendata, current_readsize, len(tsk)))
+
+                        workset = newset
+                        offset += current_readsize
+
+                    self.stat_times.append( time.time() - set_start_time )
+
+                    if self.verbose >= 3:
+                        print( "Done with set (no more buckets)" )
+
+                    if len(workset)>0:
+                        if size not in self.dup_sets:
+                            self.dup_sets[size] = []
+                        self.dup_sets[size].append( workset.values() )
+                    #self.dup_sets.extend( workset.values() )
+                    handled_cases += 1
+                    handled_files += len(lst)
+                    if not quiet:
+                        showupdate()
+                       
+        finally:
+            self.work_time = time.time() - start_time
+        
+
+    def check_bug(self):
+        seen_filenames=set()
+        
+        for size in sorted(self.dup_sets):
+            for dupset in self.dup_sets[size]:
+                dss = set(dupset) # for easy equality check
+
+                seen_and_current = seen_filenames.intersection(dss)
+                if len( seen_and_current )>0:
+                    raise ValueError('Broken assumption / bug: a path appears in more than one duplicate set (unsafe to apply delete logic). Problem case is one or more of %r (size %d)'%(seen_and_current,size))
+                seen_filenames.update(dss)
+
+    
+            
+    def report(self, long=False):
+        ''' If long==False (default), reports only how many sets and files are involved, and how many bytes are wasted.
+            If long==True,            it first lists all duplicate sets
+        '''
+        # Summarize the wasted space
+        # Get all filename sizes
+        fnsize = {}
+        for size in self.persize:
+            for fn in self.persize[size]:
+                fnsize[fn]=size
+
+        if long==True:
+            if len(self.dup_sets)==0:
+                print( "INFO: No duplicate sets found\n" )
+            else:
+                print( "Files in duplicate sets:" )
+                #print self.dup_sets           
+                for size in sorted(self.dup_sets):  #sorted to display largest last
+                    filesets = self.dup_sets[size]
+                    if len(filesets)==0:
+                        continue
+
+                    if self.verbose>1:
+                        print( '%sB each: (%d)'%(kmg(size),size) ) #kmg(fnsize[ss[0]]) )
+                    else:
+                        print( '%sB each: '%kmg(size) ) #kmg(fnsize[ss[0]]) )
+
+                    for fileset in filesets:
+                        #print repr(fileset)
+                        ss = sorted(fileset)
+                        for fn in ss:
+                            #This way so that it's easier to copy-paste spaced filenames for manual rm and such.
+                            # Should probably escape this - but check which codec actually makes sense first.
+                            #maybe print repr(fn) is effectively the same? Maybe there's a good escaper?
+                            if "'" in fn:
+                                print( '"%s"'%fn )
+                            else:
+                                print( "'%s'"%fn )
+
+                        print( '' )
+        
+        print( "Summary: " )
+        total_sets  = 0
+        total_files = 0
+        unnecessary_bytes = 0
+        unnecessary_files = 0
+        for size in self.dup_sets:
+            filesets = self.dup_sets[size]
+            for fileset in filesets:
+                if len(fileset)==0:
+                    continue
+                #print fileset
+                total_sets  += 1
+                total_files += len(fileset)
+                unnecessary_bytes += (len(fileset)-1)*size
+                unnecessary_files += (len(fileset)-1)
+
+            
+        if self.verbose>=2:
+            print( "  Considered %d files (in %d sets)"%(self.nfiles, len(self.persize) ) )
+            print( "  Of the %s sets we started with\n    %s had unique sizes and %d needed content checks \n    %d took over %.1f seconds to check"%(
+                len(self.persize),
+                self.stat_trivial,
+                self.stat_nontrivial,
+                len(list(e  for e in self.stat_times if e>self.time_thresh)),
+                self.time_thresh,
+                ) )
+
+        if self.skipped_assumptions>0:
+            print( "  Found %d sets of duplicate files   (Warning: %d were ASSUMED to be equal after %sB)"%(total_sets, self.skipped_assumptions, kmg(self.stoplen)) )
+        else:
+            print( "  Found %d sets of duplicate files"%(total_sets) )
+                                    
+        #print( "    %d files involved in duplicate sets"%total_files )
+        print( "    %d files could be removed,\n    to save %sB"%(unnecessary_files, kmg(unnecessary_bytes)) )
+
+        if 1:
+            spentmsg = ''
+            if self.work_time < 1:
+                spentmsg = "  Spent %.2f seconds"%self.work_time
+            else:
+                spentmsg = "  Spent %d seconds"%self.work_time
+
+            diskread_mb = self.stat_diskread/1048576.
+            if self.stat_total_file_size>0:
+                spentmsg +=  "    reading %sB  (%.1f%% of %sB)"%(
+                    kmg(self.stat_diskread),           #math.ceil(diskread_mb),
+                    (100.*self.stat_diskread)/(self.stat_total_file_size),
+                    kmg(self.stat_total_file_size),    #math.ceil(self.stat_total_file_size/1048576.),
+                    )
+
+                if self.verbose >= 2:
+                    spentmsg += "\n    in %d file operations"%( self.stat_diskread_count )
+
+            if self.verbose >=2:
+                spentmsg += "\n    Overall read speed: ~%dMB/s"%(diskread_mb/self.work_time)
+                    
+            print( spentmsg )
+                
+        print( "" )
+
+
+ 
+    def apply_delete_rules(self):
+        ''' Applies the given ruleset to each fileset.
+
+            Rules is a list of tuples:
+             (rule_name, function, kwargs_dict)
+             
+            All rules are evaluated.
+            Rule functions are called with the set and the given kwargs
+              Using any information it sees fit, it should return a dict
+              mapping *all* members of the set to one of 'KEEP' (2), 'DELETE' (1), or 'UNKNOWN' (0)
+
+            The logic here will collect all such results and decide what to do.
+            * it considers the rules/results unordered;
+            * The member's value is min(all values)
+              which means it KEEP > DELETE, and we ignore UNKNOWN when there is a KEEP or DELETE
+            * only considers a set ready for action
+              when there are zero UNKNOWNs and at least one KEEP
+
+            ...so we e.g. do nothing with only DELETEs.
+              
+            We err on the side of doing nothing,
+             which means you can write rule sets for small subsets of the duplicate files,
+             and takes action only for sets in which things are clear.
+        '''
+        if self.rules==None or len(self.rules)==0:
+            raise ValueError('You need to supply at least one rule to use delete logic')
+
+        deleted_files  = 0
+        deleted_bytes  = 0
+        undecided_sets = 0
+
+        self.check_bug() # temporary
+
+        for size in sorted(self.dup_sets):
+            for dupset in self.dup_sets[size]:
+            
+                dupset_judgments=[]
+                for rule_name,rule_func,rule_func_kwargs in self.rules:
+                    rule_judgment = rule_func(dupset, **rule_func_kwargs)
+                    dupset_judgments.append( rule_judgment )
+
+                merged_judgment = dupset_judgments[0]
+                for fn in dupset:
+                    for jdict in dupset_judgments[1:]:
+                        merged_judgment[fn] = max(merged_judgment[fn],jdict[fn])
+
+                mjv = merged_judgment.values()
+                if min(mjv)==0:
+                    if self.verbose:
+                        print( 'Undecided set (has unknowns)' )
+                        undecided_sets+=1
+
+                else: #>=1, no unknowns
+                    if max(mjv)==1: #No keeps
+                        if self.verbose:
+                            print( 'Undecided set (only deletes)' )
+                            undecided_sets += 1
+                    elif min(mjv)==2:
+                        # not really a special case of the below - would do nothing.  ...but we can report it nicely
+                        if self.verbose:
+                            print( 'Undecided set (only keeps)' ) 
+                            undecided_sets += 1
+                    else:
+                        #only in this case do we do any deletes
+                        if self.verbose:
+                            print( 'DECIDED set' )
+                        for fn in merged_judgment:
+                            if merged_judgment[fn]==1:
+                                _,_,_,_,_,_,size,_,_,_ = os.lstat(fn)
+                                if self.verbose >= 2:
+                                    print( "  deleting (%s)  %s"%(size,fn) )
+                                deleted_bytes += size
+                                deleted_files += 1
+                                
+                                if not self.dry_run:
+                                    os.unlink(fn)
+                            else:
+                                if self.verbose >= 3:
+                                    print( "  keeping  (%s)  %s"%(size,fn) )
+                                
+                show = {0:'UNKN', 1:'DELE', 2:'KEEP'}
+                if self.verbose:
+                    print( "For set (size %s):"%size )
+                    for fn in merged_judgment:
+                        print( "  %s  %r "%(show[merged_judgment[fn]], fn) )
+                    print("")
+                
+        print
+        if self.dry_run:
+            print( "Total size of the %d files we would delete: %sB"%(deleted_files, kmg(deleted_bytes)) )
+        else:
+            print( "Total size of the %d files we deleted just now: %sB"%(deleted_files, kmg(deleted_bytes)) )
+        print( "Undecided sets: %d"%undecided_sets )
+
+
+      
+
+# TODO:
+#      -f globfilter  only include filenames that match this, e.g. -f '*.py'. Can be specified more than once
+ 
+def usage(stream=sys.stderr):
+    stream.write('''
+Usage: duppy [options] path [path...]
+   
+   Finds duplicate files.
+   
+   By default only prints a summary of wasted space.
+   Use -v for a full list of duplicates (I feel more comfortable manually deleting based on this output)
+    or -d and some rules to automate deletion.
+   
+   Options:
+      -q             be quiet while working.   Access errors are still reported.
+      -v             be verbose about progress, report all duplicate file sets. Specify twice for even more.
+      
+      -R             Non-recursive.
+                     (To run on only files in curdr -R,  and * (not .) for the argument)
+
+      -s size    minimum size. Ignore files smaller than this size.  Default is 1, only ignores zero-length files.
+                 (useful to find major space saving in less time)
+      -S size    maximum size
+                 (sometimes useful in a "now look at just the files between 100KB and 200KB",
+                  which makes repeated runs faster since most data will still be cached)
+                 
+      -a size    Assume a set is identical after this many matching bytes, e.g.  -a 32MB
+                 Meant for dry-runs, for a faster _estimation_ of wasted space,
+                 but WARNING: it will also apply to real runs. While this _usually_ makes sense
+                 (most files that are distinct are so within ~150KB), *know for sure* that it makes sense for your case.
+
+                 
+   Rules and deleting:
+      --rule-help            List of rules, and examples of use.
+      -n                     Apply rules - in a dry run. Will say what it would do, but delete nothing.
+      -d                     Apply rules, and delete files from sets that are marked DELETE (and that also have at least one KEEP).
+                
+   Examples:
+      # Just list what is duplicate
+      duppy -v .
+
+      # faster estimation of bulk space you could probably free  (note: not a full check)
+      duppy -v -s 10M -a 20M /data/Video
+      
+      # work on the the specific files we mention, and no recursion
+      duppy -vR *
+
+''')
+    stream.flush()
+#      --no-default-rules     Do not add some default rules   (that would protect known metadata, git, svn, etc)
+# CONSIDER:
+#  -i substr  Ignore files with this in their full path.
+# 
+#  --keep-one-random-favour-path substr
+#  --keep-unknowns     Delete deletes even if there are unknowns.
+#                     (considers a set decided, by considering unknowns as keeps) 
+#
+#  --generate-ruleset   interactively generate a rule file based on common patterns in a set of files (TODO)
+      
+
+def main():
+    ''' Option parsing, calling the exact-dupe class '''
+    
+    # Figure out command line options
+    import getopt
+    delete,dry_run,quiet,report=False,False,False,True
+    verbose        = 0
+    minlen         = 1
+    maxlen         = None
+    recursive      = True
+    readsize_kb    = 32
+    maxreadsize_kb = 256
+    stoplen        = 0
+
+    rules = []
+    default_rules = True
+    
+    args = sys.argv[1:]
+    try:
+        t, fileargs = getopt.getopt(args, 'hvm:b:s:S:dlpqnea:rRu:',
+                                    ['rule-help',
+                                     'no-default-rules',
+                                     
+                                     'elect-one-random',
+
+                                     'lose-path=',
+                                     'delete-path=',
+                                     'keep-path=',
+                                     
+                                     'lose-path-re=',
+                                     'delete-path-re=',
+                                     'keep-path-re=',
+                                     
+                                     #'keep-deepest',
+                                     #'keep-shallowest',
+                                     #'keep-longest-path',
+                                     #'keep-longest-basename',
+                                     #'keep-newest',
+                                     
+                                    ])
+        
+        for opt,args in t:
+            if opt=='-e':
+                print( "Running benchmarks, on current directory" )
+                bench()
+                return
+
+            elif opt=='-h': # Help
+                raise ValueError('Caught below for usage printing')
+            elif opt=='-d': # delete 
+                delete   = True
+            elif opt=='-n': # apply all delete logic, showing what we would do, but don't remove any files. implies -d
+                dry_run  = True
+                delete   = True
+            elif opt=='-v':
+                verbose += 1
+            elif opt=='-q': 
+                quiet    = True
+                
+            elif opt=='-b':
+                readsize_kb    = int(args,10)
+            elif opt=='-m':
+                maxreadsize_kb = int(args,10)
+            
+            elif opt=='-s':
+                minlen    = parse_kmg(args)
+            elif opt=='-S':
+                maxlen    = parse_kmg(args)
+            
+            elif opt=='-r':
+                recursive = True
+            elif opt=='-R':
+                recursive = False
+
+            elif opt=='-a':
+                stoplen   = parse_kmg(args)
+
+            elif opt=='--no-default-rules':
+                default_rules = False
+                
+            #elif opt=='--default-delete':
+            
+            #elif opt=='--default-keep':
+
+            elif opt=='--rule-help':
+                # TODO: better explanation.
+                print( '''               
+      
+       
+    The set is currently
+        --elect-one-random                      keep one, the easiest and most arbitrary way to go.
+        --(keep,delete,lose)-path=SUBSTR        match absolute path by substring
+        --(keep,delete,lose)-path-re=REGEXP     match absolute path with regular expressions, mark any matches KEEP
+        --(keep,delete,lose)-newest             looks for file(s) with the most recent time  (and for each file uses max(mtime,ctime))
+        --(keep,delete,lose)-deepest            keep file in deepest directory.   Useful when you typically organize into directories.
+        --(keep,delete,lose)-shallowest         keep file in shallowest directory. Useful in similar cases.
+        --(keep,delete,lose)-longest-path       considers string length of full path
+        --(keep,delete,lose)-longest-basename   considers string length of just the filename (not the path to the directory it is in)
+
+    lose-*   rules mark matches DELETE, non-matches as KEEP     so by themselves they are decisive
+    delete-* rules mark matches DELETE, non-matches UNKNOWN     e.g. useful if combining a detailed set of keep- and delete-
+    keep-*   rules mark matches KEEP, non-matches UNKNOWN,      e.g. useful to mark exceptions to a main lose- rule
+    
+    We apply all specified rules to all sets, which marks each filename as KEEP, DELETE, or UNKNOWN.
+      These judgments are combined conservatively, so e.g. KEEP+DELETE = KEEP
+      
+    We only delete files from decided sets,  which are those with at least one KEEP and no UNKNOWN
+      Note that we *never* deletes everything: an all-DELETE set is considered undecided)
+       and that combining rules tends to be on the conservative side.
+
+
+ Examples:
+    
+      # "I don't care which version you keep"
+      duppy -v -d -n --keep-one-random /data/Video
+
+      # "Right, I just downloaded a load of images, and I have most already. Clean from this new dir"
+      duppy -v -d -n --delete-path '/data/images/justdownloaded/' /data/images      
+
+      # "assume that anything sorted into a deeper directory, and anything named archive, needs to stay"
+      # This may well be indecisive for some sets
+      duppy -v -d -n --keep-deepest --keep-path-re '[Aa]rchive' /data/Video
+     
+              
+''')
+                sys.exit(0)
+
+            elif opt=='--elect-one-random':
+                rules.append(  ('choose random file in set',                duppy_rules.choose_one_random, {} )  )
+
+                
+            elif opt=='--lose-path':
+                rules.append(  ('Delete files from this directory, keep rest',
+                                duppy_rules.delete_path, {'substr':args, 'others':duppy_rules.KEEP} )  )
+            elif opt=='--delete-path':
+                rules.append(  ('Delete files from this directory, keep rest',
+                                duppy_rules.delete_path, {'substr':args, 'others':duppy_rules.UNKN} )  )
+            elif opt=='--keep-path':
+                rules.append(  ('Delete files from this directory, keep rest',
+                                duppy_rules.keep_path, {'substr':args} )  )
+
+            elif opt=='--lose-path-re':
+                rules.append(  ('Delete files from this directory, keep rest',
+                                duppy_rules.delete_path_re, {'restr':args, 'others':duppy_rules.KEEP} )  )
+            elif opt=='--delete-path-re':
+                rules.append(  ('Delete files from this directory, keep rest',
+                                duppy_rules.delete_path_re, {'restr':args, 'others':duppy_rules.UNKN} )  )
+            elif opt=='--keep-path-re':
+                rules.append(  ('Delete files from this directory, keep rest',
+                                duppy_rules.keep_path_re, {'restr':args} )  )
+
+                
+            #elif opt=='--keep-deepest':
+            #    rules.append(  ('keep file(s) in deepest directory',      duppy_rules.keep_deepest, {} )  )
+                
+            #elif opt=='--keep-shallowest':
+            #    rules.append(  ('keep file(s) in shallowest directory',   duppy_rules.keep_shallowest, {} )  )
+                             
+            #elif opt=='--keep-longest-path':
+            #    rules.append(  ('keep file(s) with longest path string',  duppy_rules.keep_longestpath,  {} )  )
+
+            #elif opt=='--keep-longest-path':
+            #    rules.append(  ('keep file(s) with longest basename',     duppy_rules.keep_longestpath,  {} )  )
+                
+            #elif opt=='--keep-newest':
+            #    rules.append(  ('keep file(s) with the newest ctime',     duppy_rules.keep_newest,  {} )  )
+
+            #if verbose >= 2:
+            #    print( `opt, args` )
+                
+    except ValueError as e: # most likely from getopt parse call
+        #raise
+        usage()
+        #print 'DEBUG: %s'%e
+        return
+
+    
+    maxreadsize_kb = max(maxreadsize_kb,readsize_kb)
+    readsize       = readsize_kb*1024
+    maxreadsize    = max(readsize, min(4096*1024,maxreadsize_kb*1024)) #truncated at 2M
+    if verbose>=2:
+        print( 'Read block size: %sB'%kmg(readsize) )
+        print( 'Max read block size: %sB'%kmg(maxreadsize) )
+
+    if dry_run and verbose==0:
+        print( "Dry run (-n) without verbosity (-v) would not actually mention anything :)" )
+        sys.exit(-2)
+
+    if delete and len(rules)==0: # avoid work before error
+        print( "When using delete logic (-d or -n), you need at least one decisive rule" )
+        sys.exit(-2)
+        
+    if default_rules:
+        rules.extend( duppy_rules.default_rules() )
+                
+    if verbose >= 2:
+        print( "--- Ruleset: ---" )
+        for name,f,args in rules:
+            print( '%s'%name )
+        print( "----------------" )
+
+
+
+    #######################################################
+    ### The calls that do the work
+    d = ExactDupes(verbose=verbose,
+                 ignore_dirnames=('.svn','.git','.hg', '.bzr','.dropbox.cache'), # TODO: allow additions from arguments
+                 minlen=minlen, maxlen=maxlen,
+                 stoplen=stoplen,
+                 readsize=readsize, maxreadsize=maxreadsize,
+                 rules=rules, delete=delete, dry_run=dry_run)
+
+    if d.stoplen != 0: # that max isn't strictly correct, but better than just mentioning stoplen
+        print( "NOTE: Assuming files are identical after %sB"%kmg(max(d.stoplen, d.readsize)) )
+    
+    print( "Creating list of files to check..." )
+    if len(fileargs)==0:
+        if delete:
+            print( "Refusing to run with --delete on implied current directory (specify it explicitly)" )
+            sys.exit(-3)
+        if not quiet:
+            print( "   no file arguments given, using current directory" )            
+        d.add( os.getcwd(), recursive )
+        if verbose:
+            sameline('')
+    else:
+        for arg in fileargs:
+            d.add(arg, recursive)
+        if verbose:
+            sameline('')
+
+    if not quiet:
+        sameline('') # Clear the (last mentioned filename from the) line
+        print( "Done scanning, found %d files to check."%d.nfiles )
+
+    if verbose:
+        print( "\nLooking for duplicates..." )
+
+    try:
+        d.work( quiet )
+    except KeyboardInterrupt:
+        print "Ctrl-C, summarizing what we have so far..."
+        if delete:
+            print " (and skipping the delete pass)"
+            delete = False
+        
+    if verbose:
+        sameline('') # Clear the status from the line
+        print( "Done.\n" )
+
+    if report  or  verbose >= 1:
+        print( '' )
+        d.report(long=(verbose and not quiet))
+
+    if delete:        
+        d.apply_delete_rules( )
+
+
+
+def bench():
+    """ This is 84 tests. Makes the most sense to run on a large directory (at least thousands of files)
+        Flushes OS caches between runs - don't use this on your production server :)
+    """
+    
+    tries = []
+    for minsize in ( 1, 10, 100, 1000, 10000, 1000000):
+       for base in ( 32, 64, 128, 256):
+          for mx in ( 32, 64, 128, 256, 512, 1024):
+              if mx<base:
+                  continue
+              tries.append( (minsize,base,mx) )
+
+    results = []
+
+    import subprocess,time,sys
+    for minsize, baseblock,maxblock in tries:
+        print( "Flushing OS caches... ", )
+        sys.stdout.flush()
+        subprocess.Popen("sync").wait()
+        f = open('/proc/sys/vm/drop_caches','w')
+        f.write('3')
+        f.close()
+        
+        print( "running duppy...", )
+        sys.stdout.flush()
+        start_time = time.time()
+        p = subprocess.Popen( ("duppy -s %d -b %d -m %d"%(minsize,baseblock,maxblock)).split(' '), stderr=subprocess.PIPE,stdout=subprocess.PIPE  )
+        our,err = p.communicate()
+        diff_time = time.time() - start_time
+        
+        result = "minsize %d, base %d, max %d -- time: %.3fsec"%( minsize,baseblock,maxblock,diff_time )
+
+        print( result )
+        results.append(result)
+
+    #and once again, for overview
+    print( '\n'.join(results) )
+
+
+if __name__=='__main__':
+    
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
+    print("\n")
+    
+    # TODO: store sequence of hashes, to speed up users who wish to check new files against a large set of existing files
+    #hash_cache_filename = os.path.expanduser('~/.duppy_hash_cache')
+    #try:
+    #    try:
+    #        hcf = open( hash_cache_filename ,'r')
+    #        hash_cache = pickle.load( hcf )
+    #        hcf.close()
+    #    except: # don't have a cache, it's invalid, or whatnot
+    #        hash_cache = {}
+    #    
+    #    try:
+    #        main()
+    #    finally: 
+    #        print "\nSaving hashes for speed boost next time"
+    #        hcf = open( hash_cache_filename ,'wb')
+    #        pickle.dump( hash_cache, hcf )
+    #        hcf.close()
+
+
+
+
+
+
+#
+#      Tweaking:
+#      
+#      We start reading small blocks (e.g. 32KB or 64KB) because most of the time this is
+#        enough to discover uniqueness, while for larger identical files larger blocks will mean
+#        less overhead in a bulky check.
+#      We increase the basic size to the max as more of the same fileset checks out to be identical
+#        like 32, 64, 128, 256, 512, 512, 512, ...      
+#      
+#      -b        initial block size, in KByte (default: 32)
+#      -m        maximum block size, in KByte (default: 512)                
+#                On many-disk RAID you can raise the latter for some extra speed on large files.
+#                For slightly more modest memory use, you can lower them.
+
+
+    
