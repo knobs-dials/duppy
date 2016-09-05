@@ -125,11 +125,10 @@ Delete rule options (still sort of an experiment)
         keep-*   rules mark matches KEEP, non-matches UNKNOWN,      e.g. useful to mark exceptions to a main lose- rule
 
         We apply all specified rules to all sets, which marks each filename as KEEP, DELETE, or UNKNOWN.
-          These judgments are combined conservatively, so e.g. KEEP+DELETE = KEEP
+          These are combined conservatively, e.g. KEEP+DELETE = KEEP
 
         We only delete files from decided sets,  which are those with at least one KEEP and no UNKNOWN
-          Note that we *never* deletes everything: an all-DELETE set is considered undecided)
-           and that combining rules tends to be on the conservative side.
+          Note that we *never* delete everything: an all-DELETE set is considered undecided)
 
 
      Examples:
