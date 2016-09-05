@@ -7,10 +7,12 @@ Duplicate file detector.
 Incrementally checks blocks of content, motivated by the observation that duplicate detection is largely IO-bound,
 and since distinct files are usually unique in the first few dozen KB, the larger the files, the less efficient a complete-hash solution is (...when you don't store and use information about the files it has seen. I'm considering that in here.).
 
-...except if there _are_ a lot of large duplicates, because you have to verifying that.
-If you want a quick estimate of space you can save, you can make it assume after some amount of bytes.
+...except if there _are_ a lot of large duplicates, because you still have to spend much of your time verifying.
 
-Also you can make it ignore smaller files. For example,
+
+You can make it assume after some amount of bytes. 
+If you want a faster faster-yet-more-approximate estimate of possible space savings, do that, and ignore smaller files.
+For example,
 
 ```
     # duppy -v -a 32M -s 500K /dosgames
