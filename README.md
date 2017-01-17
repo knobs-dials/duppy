@@ -4,14 +4,17 @@ duppy
 
 Duplicate file detector.
 
-Incrementally checks blocks of content, motivated by the observation that duplicate detection is largely IO-bound,
-and since distinct files are usually unique in the first few dozen KB, the larger the files, the less efficient a complete-hash solution is (...when you don't store and use information about the files it has seen. I'm considering that in here.).
+Incrementally checks blocks of content, which is pretty fast when you have largeish mostly-unique files,
+because the larger the (unique) files, the more reading you avoid.
 
-...except if there _are_ a lot of large duplicates, because you still have to spend much of your time verifying.
+Motivated by the observation that duplicate detection is largely IO-bound, and that unique files are usually unique in the first few dozen KB.
 
 
-You can make it assume after some amount of bytes. 
-If you want a faster faster-yet-more-approximate estimate of possible space savings, do that, and ignore smaller files.
+When there _are_ large duplicates it'll spend most of the time a while verifying,
+and clobber your page cache in the process,
+so you can make it assume equality after some amount of identical bytes. 
+
+If you want a fast estimate of possible space savings, both make that assumption, and make it ignore the bulk of small files.
 For example,
 
 ```
@@ -152,26 +155,25 @@ TODO:
 =====
 * consider verbosity by default (I always use -v)
 
-* maybe rip out the rules after all? (I usually look at the -v output and delete manually)
-
 * More sanity checks, and regression tests. I _really_ don't want to have to explain that we deleted all your files due to a silly bug  :)
 
 * figure out why the 'total read' sum is incorrect
 
 * cleanup. Until now I mainly didn't release it because it needed cleaning. Typical :)
 
-
 * think about the clarity of the rule system
-
-* consider a homedir config of permant rules (for things like "always keep stuff from this dir")
-
-
-* consider storing a cache with (fullpath,mtime,size,hash(first64kB)) or so in your homedir,
-  for incremental checks on slowly growing directories
-  (storage should be on the order of ~35MB per 100k files, acceptable for most)
-
-* consider having an IO thread (minor speed gains?)
-
+* maybe rip out the rules after all? (I usually look at the -v output and delete manually)
 
 * test on windows
 
+
+CONSIDERING:
+* page-cache-non-clovvering
+
+* consider a homedir config of permant rules (for things like "always keep stuff from this dir")
+
+* consider having an IO thread (minor speed gains?)
+
+* storing a cache with (fullpath,mtime,size,hash(first64kB)) or so in your homedir,
+  for incremental checks on slowly growing directories
+  (storage should be on the order of ~35MB per 100k files, acceptable for most)
