@@ -1,13 +1,9 @@
 duppy
 ================
 
+Duplicate file detection by incrementally checking blocks of content.
 
-Duplicate file detector.
-
-Incrementally checks blocks of content, motivated by the observation that duplicate detection is largely IO-bound, and that unique files are usually unique in the first few dozen KB.
-
-If you have a lot of large mostly-unique files, this avoids a lot of reading.
-
+Motivated by the observation that duplicate detection is largely IO-bound (and the larger the files, specifically read-bound), and that unique files are usually unique in the first few dozen KB. If you have a lot of large mostly-unique files, we avoid a lot of reading.
 
 
 Options
@@ -47,20 +43,25 @@ Options:
 Examples:
 
 * Just list what is duplicate:
-    duppy .
+
+        duppy .
 
 * faster estimation of bulk space you could probably free  (note: not a full check)
-    duppy -s 10M -a 20M /data/Video
+
+        duppy -s 10M -a 20M /data/Video
 
 * work on the the specific files we mention, and no recursion if that includes a directory
-    duppy -R data*
+
+        duppy -R data*
 
 
 * If you find duplicates, and any of them is in a directory called justdownloaded, choose that to delete
-    duppy . -d -n --delete-path=/justdownloaded/
+
+        duppy . -d -n --delete-path=/justdownloaded/
 
 * fast estimate of savingss: ignore files smaller than 500KB, assume files are identical after 32MB
-    duppy -s 500K -a 32M /dosgames
+
+        duppy -s 500K -a 32M /dosgames
 
 
 The last because 
