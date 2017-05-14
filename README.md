@@ -9,62 +9,6 @@ Incrementally checks blocks of content, motivated by the observation that duplic
 If you have a lot of large mostly-unique files, this avoids a lot of reading.
 
 
-However, when there _are_ a lot of large duplicates, it will most of its time verifying them, and do more seeks than a simpler file-hashing solution would, and still clobber your page cache.
-
-...so if you want a faster (but more approximate) estimate of possible space savings, you can make it assume two files are idential after a given amount of identical bytes.
-
-You can also make it ignore small files (would often mean relatively much IO for relatively little savings).
-
-```
-    # duppy -s 500K -a 32M /dosgames
-    NOTE: Assuming files are identical after 32MB
-
-    Creating list of files to check...
-       no file arguments given, using current directory
-    Done scanning, found 8423 files to check.
-
-    Looking for duplicates...
-    Assuming 2 files ('/dosgames/Full Throttle/image.img', '/dosgames/Full Throttle.img') are identical after 32MB (of 614MB)
-    Done.
-    
-    Looking for duplicates...
-     Done.
-    
-    [bunch of stuff omitted for brevity]
-    
-    1.8MB each:
-    '/dosgames/temp_selection/KEEPER/CDCONT/KEEPER/KEEPER.EXE'
-    '/dosgames/temp_selection/KEEPER/KEEPER.EXE'
-    
-    29MB each:
-    '/dosgames/Quake2/lamber/pak0.PAK'
-    '/dosgames/Quake2/lamber2/pak0.PAK'
-    
-    614MB each:
-    '/dosgames/Full Throttle.img'
-    '/dosgames/Full Throttle/image.img'
-    
-    Summary:
-      Found 567 sets of duplicate files   (Warning: 1 were ASSUMED to be equal after 32MB)
-        684 files could be removed,
-        to save 2.4GB
-      Spent 93 seconds    reading 3.0GB  (2.7% of 111GB)
-```
-
-
-
-
-Notes / warnings:
-* think about what your delete rules mean. It'll refuse to delete every copy, but you can still make a mess for yourself.
-* I have done basic sanity tests, but don't trust this blindly on files you haven't backed up.
-
-* Does not consider symlinks readable files, so won't delete them or consider them duplictes of the things they point to.
-* ...but note it can still _break_ symlinks (to not do that, it have to scan the entire filesystem)
-
-* safe around hardlinks in that it avoids adding the same inode twice. There is no space to be saved, and you're probably hardlinking for a reason. (We could still report them, though)
-
-* you may wish to check files between e.g. 1MB and 2MB, then 100KB and 1MB, and so on, because if you run one such subrange repeatedly (looking at the report), most data will still be in the page cache and you won't clobber that cache as fast
-
 
 Options
 ===
@@ -114,6 +58,68 @@ Examples:
 
 * If you find duplicates, and any of them is in a directory called justdownloaded, choose that to delete
     duppy . -d -n --delete-path=/justdownloaded/
+
+* fast estimate of savingss: ignore files smaller than 500KB, assume files are identical after 32MB
+    duppy -s 500K -a 32M /dosgames
+
+
+The last because 
+* You can also make it ignore small files (would often mean relatively much IO for relatively little savings).
+
+* when there _are_ a lot of large duplicates, it will most of its time verifying them, and do more seeks than a simpler file-hashing solution would, and still clobber your page cache.
+
+
+
+
+Example output:
+```
+    NOTE: Assuming files are identical after 32MB
+
+    Creating list of files to check...
+       no file arguments given, using current directory
+    Done scanning, found 8423 files to check.
+
+    Looking for duplicates...
+    Assuming 2 files ('/dosgames/Full Throttle/image.img', '/dosgames/Full Throttle.img') are identical after 32MB (of 614MB)
+    Done.
+    
+    Looking for duplicates...
+     Done.
+    
+    [bunch of stuff omitted for brevity]
+    
+    1.8MB each:
+    '/dosgames/temp_selection/KEEPER/CDCONT/KEEPER/KEEPER.EXE'
+    '/dosgames/temp_selection/KEEPER/KEEPER.EXE'
+    
+    29MB each:
+    '/dosgames/Quake2/lamber/pak0.PAK'
+    '/dosgames/Quake2/lamber2/pak0.PAK'
+    
+    614MB each:
+    '/dosgames/Full Throttle.img'
+    '/dosgames/Full Throttle/image.img'
+    
+    Summary:
+      Found 567 sets of duplicate files   (Warning: 1 were ASSUMED to be equal after 32MB)
+        684 files could be removed,
+        to save 2.4GB
+      Spent 93 seconds    reading 3.0GB  (2.7% of 111GB)
+```
+
+
+
+Notes / warnings:
+=====
+* think about what your delete rules mean. It'll refuse to delete every copy, but you can still make a mess for yourself.
+* I have done basic sanity tests, but don't trust this blindly on files you haven't backed up.
+
+* Does not consider symlinks readable files, so won't delete them or consider them duplictes of the things they point to.
+* ...but note it can still _break_ symlinks (to not do that, it have to scan the entire filesystem)
+
+* safe around hardlinks in that it avoids adding the same inode twice. There is no space to be saved, and you're probably hardlinking for a reason. (We could still report them, though)
+
+* you may wish to check files between e.g. 1MB and 2MB, then 100KB and 1MB, and so on, because if you run one such subrange repeatedly (looking at the report), most data will still be in the page cache and you won't clobber that cache as fast
 
 
 
