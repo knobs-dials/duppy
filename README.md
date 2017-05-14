@@ -46,28 +46,23 @@ Examples:
 
         duppy .
 
-* faster estimation of bulk space you could probably free  (note: not a full check)
-
-        duppy -s 10M -a 20M /data/Video
-
 * work on the the specific files we mention, and no recursion if that includes a directory
 
         duppy -R data*
-
 
 * If you find duplicates, and any of them is in a directory called justdownloaded, choose that to delete
 
         duppy . -d -n --delete-path=/justdownloaded/
 
-* fast estimate of savingss: ignore files smaller than 500KB, assume files are identical after 32MB
+* fast and rough estimate of possible space savingss: ignore files smaller than 500KB, assume files are identical after 32MB
 
         duppy -s 500K -a 32M /dosgames
 
 
 The last because 
-* You can also make it ignore small files (would often mean relatively much IO for relatively little savings).
+* small files mean relatively much IO for relatively little savings
 
-* when there _are_ a lot of large duplicates, it will most of its time verifying them, and do more seeks than a simpler file-hashing solution would, and still clobber your page cache.
+* when there _are_ a lot of large duplicates, it will most of its time verifying them, still clobber your page cache, and do more seeks than a simpler file-hashing solution would
 
 
 
