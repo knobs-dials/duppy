@@ -1,6 +1,7 @@
 #!/usr/bin/python -O
 """ Duplicate file finder via incremental content comparison.
     Usually reads <10% of the data, regularly <1%.
+    Which mostly helps on larger files, because otherwise it *is* a whole bunch of seeks.
     See the README for an introduction.
     
     
@@ -84,12 +85,9 @@
     After that, if a set has no UNKNOWNs and at least one KEEP, we delete any marked DELETE.
 
     See help for the types of rules.
-
-
-  CONSIDER:
-  - homedir store of, roughly,    abspath -> (size, mtime,ctime, hash_of_first_10K)
-    so that later runs can eliminate various things without a lot of filesystem access
 """
+
+
 import sys
 import os
 import stat
@@ -106,7 +104,6 @@ try:
     setproctitle.setproctitle( os.path.basename(sys.argv[0]) )
 except ImportError:
     pass
-
 
 
 try:
@@ -176,6 +173,8 @@ def kmg(bytes,kilo=1024):
 
 def parse_kmg(str, kilo=1024):
     " E.g. '1MB' -> 1048576.   Quick and dirty implementation, could stand cleaning "
+    #if type(str) is int:
+    #    return str
     try:
         ns = str.rstrip('kmgtbKMGTBiI')
         ret = float(ns)
@@ -191,7 +190,7 @@ def parse_kmg(str, kilo=1024):
         ret=int(ret)
         return ret
     except Exception as e:        
-        print( "Didn't understand value %r"%ns )
+        print( "Didn't understand value %r"%str )
         print( e )
         raise
 
@@ -409,7 +408,7 @@ class ExactDupes(Indexer):
                                     #   read already disambiguates
                                     # Yes, we end up reading that last block twice, but it's fairly insignificant time
 
-                                    if loopcounter!=2: # all but the second read read
+                                    if loopcounter!=2: # all but the second read
 
                                         there_already = fob.tell()==offset
 
@@ -435,9 +434,9 @@ class ExactDupes(Indexer):
                                                 print( "             ...also seeking to %d  for %d more bytes"%( size-restsize, restsize ) )
                                             fob.seek(size-restsize)  # SEEK_END was only added in py2.5
                                             extra_read_data = fob.read(restsize) # ...AND from end of file.
+                                            self.stat_diskread_count += 1
                                             #print "got %d"%len(extra_read_data)
                                             d += extra_read_data
-                                            self.stat_diskread_count += 1
                                             # For small files, the next loop may be all duplicate data. Oh well?
                                         elif self.verbose>=3:
                                             print("")
@@ -763,177 +762,149 @@ class ExactDupes(Indexer):
 
       
 
-# TODO:
-#      -f globfilter  only include filenames that match this, e.g. -f '*.py'. Can be specified more than once
- 
-def usage(stream=sys.stderr):
-    stream.write('''
-Usage: duppy [options] path [path...]
-   
-   Finds duplicate files.
-   
-   By default only prints a summary of wasted space.
-   Use -v for a full list of duplicates (I feel more comfortable manually deleting based on this output)
-    or -d and some rules to automate deletion.
-   
-   Options:
-      -q             be quiet while working.   Access errors are still reported.
-      -v             be verbose about progress, report all duplicate file sets. Specify twice for even more.
-      
-      -R             Non-recursive.
-                     (To run on only files in curdr -R,  and * (not .) for the argument)
-
-      -s size    minimum size. Ignore files smaller than this size.  Default is 1, only ignores zero-length files.
-                 (useful to find major space saving in less time)
-      -S size    maximum size
-                 (sometimes useful in a "now look at just the files between 100KB and 200KB",
-                  which makes repeated runs faster since most data will still be cached)
-                 
-      -a size    Assume a set is identical after this many matching bytes, e.g.  -a 32MB
-                 Meant for dry-runs, for a faster _estimation_ of wasted space,
-                 but WARNING: it will also apply to real runs. While this _usually_ makes sense
-                 (most files that are distinct are so within ~150KB), *know for sure* that it makes sense for your case.
-
-                 
-   Rules and deleting:
-      --rule-help            List of rules, and examples of use.
-      -n                     Apply rules - in a dry run. Will say what it would do, but delete nothing.
-      -d                     Apply rules, and delete files from sets that are marked DELETE (and that also have at least one KEEP).
-                
-   Examples:
-      # Just list what is duplicate
-      duppy -v .
-
-      # faster estimation of bulk space you could probably free  (note: not a full check)
-      duppy -v -s 10M -a 20M /data/Video
-      
-      # work on the the specific files we mention, and no recursion
-      duppy -vR *
-
-''')
-    stream.flush()
-#      --no-default-rules     Do not add some default rules   (that would protect known metadata, git, svn, etc)
-# CONSIDER:
-#  -i substr  Ignore files with this in their full path.
-# 
-#  --keep-one-random-favour-path substr
-#  --keep-unknowns     Delete deletes even if there are unknowns.
-#                     (considers a set decided, by considering unknowns as keeps) 
-#
-#  --generate-ruleset   interactively generate a rule file based on common patterns in a set of files (TODO)
-      
-
 def main():
     ''' Option parsing, calling the exact-dupe class '''
     
     # Figure out command line options
-    import getopt
-    delete,dry_run,quiet,report=False,False,False,True
-    verbose        = 0
-    minlen         = 1
-    maxlen         = None
-    recursive      = True
-    readsize_kb    = 32
-    maxreadsize_kb = 256
-    stoplen        = 0
+    from optparse import OptionParser
+    p = OptionParser() # Has some options, but we're ignoring them here
 
+    p.add_option("-v",# "--verbosity",
+                 dest="verbose", default=1,
+                 help="0 prints only summary, 1 (default) prints file sets") # , 2 for debug info.
+
+    p.add_option("-s", #"--min-size",
+                 dest="minsize", default='1',
+                 help="Minimum file size to include. Defaults to 1.Note that all bytesize arguments understand values like '10M'") 
+    p.add_option("-S", #"--max-size",
+                 dest="maxsize", default=None,
+                 help="Maximum file size to include.") 
+
+    #TODO:
+    #p.add_option("-f", 
+    #             dest="globfilter", default='None',
+    #             help="Only look at filenames that match this substring, e.g. -f '.py'. Can be specified more than once.")
+    
+    #TODO:
+    #p.add_option("-F",
+    #             dest="globfilter", default='None',
+    #             help="Exclude filenames that do not match this substring, e.g. -g '/text/'. Can be specified more than once.")
+    
+    p.add_option("-R", #"--not-recursive",
+                 dest="norecurse", default=False, action='store_true',
+                 help="Default is recursive. Specify this (and files, e.g. *) to not recurse into directories.")
+
+    
+    p.add_option("-a", #"--assume-after",
+                 dest="stoplen", default='0', help="Assume a set is identical after this amount of data. Useful to avoid checking all of very large files, but be careful when cobmbining with -d")
+    
+    p.add_option("-b", #"--read-size",
+                 dest="readsize",    default='32768',
+                 help="Inital read size, rounded to nearest KB. Defaults to 32KB.") 
+    p.add_option("-m", #"--max-read-size",
+                 dest="maxreadsize", default='131072',
+                 help="Chunks to read at a time once more checks out. Rounded to nearest KB. defaults to 256KB. Can be higer on RAID.") 
+
+
+        
+ 
+
+    
+     
+    ## Delete and rule stuff
+
+    p.add_option("-d", "--delete",  dest="delete", default=False, action='store_true', help="Apply rules to figure out what to delete. If a set is decided, and you did not specify -n, will actually delete.")
+
+    p.add_option("-n", "--dry-run",  dest="dryrun", default=False, action='store_true', help="When combined with -d, will only say what it would do.")
+
+    p.add_option('--elect-one-random', dest='elect_random',action='store_true', default=False,
+                 help='Mark one KEEP, the rest DELEte. Easiest and most arbitrary.')
+
+    p.add_option('--keep-path', dest='keep_substr', help='mark KEEP by absolute filename substring')
+    
+    p.add_option('--delete-path', dest='dele_substr', help='mark DELEte by absolute filename substring')
+    
+    if 0:
+        p.add_option('--no-default-rules', dest='no_default_rules', action='store_true', default=False,
+                     help='Remove some some default rules overprotective of a few specific things.')
+
+        #p.add_option('--keep-deepest', dest='keep_deepest', action='store_true', help='By directory depth. Useful if you typically organize files into subdirectories')
+        #p.add_option('--delete-deepest', dest='dele_substr', action='store_true')
+
+        #p.add_option('--keep-shallowest', dest='keep_deepest', action='store_true')
+        #p.add_option('--delete-shallowest', dest='dele_substr', action='store_true')
+
+        #p.add_option('--keep-newest', dest='keep_deepest', action='store_true')
+        #p.add_option('--delete-newest', dest='dele_substr', action='store_true')
+
+        #p.add_option('--unknown-is-delete', dest='keep_substr', help="Useful if combination with at lest one --keep-* when you don't want to exhaustively mark all the directories you might want to delete from (which is generally the safest way to go)")
+
+        
+        
+    options, args = p.parse_args()  # defaults to parsing sys.argv[1:].  May exit the program.
+    if options.verbose>=2:
+        print 'all options:  %r'%options
+        print 'args:         %r'%args
+
+    if len(args)==0:
+        print "\nERROR: Specify directories or files to work on"
+
+        print ('''\n        
+Examples:
+  Just list what is duplicate
+    duppy .
+
+  Faster estimation of freeable space: only look at large files, and don't check completely.
+    duppy -s 10M -a 20M /data/Video
+
+  Work on the the specific files in the current directory (specify files, and no recursion)
+    duppy -R *
+        ''')
+        sys.exit(-1)
+
+        
+
+    #### Deal with things we can't hand in as-is
+
+    delete = options.delete
+    #if options.dryrun:
+    #    delete=False
+    
+    readsize_kb    = int(   round(  parse_kmg( options.readsize )    /1024  )   )
+    maxreadsize_kb = max(
+        int(   round(  parse_kmg( options.maxreadsize ) /1024  )   ),
+        readsize_kb)
+   
+    minlen = parse_kmg( options.minsize )
+    if options.maxsize:
+        maxlen = parse_kmg( options.maxsize )
+    else:
+        maxlen = None
+    
+    stoplen = parse_kmg( options.stoplen )
+                
     rules = []
     default_rules = True
-    
-    args = sys.argv[1:]
-    try:
-        t, fileargs = getopt.getopt(args, 'hvm:b:s:S:dlpqnea:rRu:',
-                                    ['rule-help',
-                                     'no-default-rules',
-                                     
-                                     'elect-one-random',
 
-                                     'lose-path=',
-                                     'delete-path=',
-                                     'keep-path=',
-                                     
-                                     'lose-path-re=',
-                                     'delete-path-re=',
-                                     'keep-path-re=',
-                                     
-                                     #'keep-deepest',
-                                     #'keep-shallowest',
-                                     #'keep-longest-path',
-                                     #'keep-longest-basename',
-                                     #'keep-newest',
-                                     
-                                    ])
+    if options.elect_random:
+        rules.append(  ('choose random file in set',          duppy_rules.choose_one_random, {} )  )
+
+    if options.keep_substr:
+        rules.append(  ('KEEP when path contains %r'%options.keep_substr,     duppy_rules.keep_path, {'substr':options.keep_substr} )  )
+    
+    if options.dele_substr:
+        rules.append(  ('DELEte when path contains %r'%options.dele_substr,   duppy_rules.delete_path, {'substr':options.dele_substr} )  )
         
-        for opt,args in t:
-            if opt=='-e':
-                print( "Running benchmarks, on current directory" )
-                bench()
-                return
-
-            elif opt=='-h': # Help
-                raise ValueError('Caught below for usage printing')
-            elif opt=='-d': # delete 
-                delete   = True
-            elif opt=='-n': # apply all delete logic, showing what we would do, but don't remove any files. implies -d
-                dry_run  = True
-                delete   = True
-            elif opt=='-v':
-                verbose += 1
-            elif opt=='-q': 
-                quiet    = True
-                
-            elif opt=='-b':
-                readsize_kb    = int(args,10)
-            elif opt=='-m':
-                maxreadsize_kb = int(args,10)
-            
-            elif opt=='-s':
-                minlen    = parse_kmg(args)
-            elif opt=='-S':
-                maxlen    = parse_kmg(args)
-            
-            elif opt=='-r':
-                recursive = True
-            elif opt=='-R':
-                recursive = False
-
-            elif opt=='-a':
-                stoplen   = parse_kmg(args)
-
-            elif opt=='--no-default-rules':
-                default_rules = False
-                
-            #elif opt=='--default-delete':
-            
-            #elif opt=='--default-keep':
-
-            elif opt=='--rule-help':
-                # TODO: better explanation.
-                print( '''               
-      
-       
-    The set is currently
-        --elect-one-random                      keep one, the easiest and most arbitrary way to go.
-        --(keep,delete,lose)-path=SUBSTR        match absolute path by substring
-        --(keep,delete,lose)-path-re=REGEXP     match absolute path with regular expressions, mark any matches KEEP
-        --(keep,delete,lose)-newest             looks for file(s) with the most recent time  (and for each file uses max(mtime,ctime))
-        --(keep,delete,lose)-deepest            keep file in deepest directory.   Useful when you typically organize into directories.
-        --(keep,delete,lose)-shallowest         keep file in shallowest directory. Useful in similar cases.
-        --(keep,delete,lose)-longest-path       considers string length of full path
-        --(keep,delete,lose)-longest-basename   considers string length of just the filename (not the path to the directory it is in)
-
-    lose-*   rules mark matches DELETE, non-matches as KEEP     so by themselves they are decisive
-    delete-* rules mark matches DELETE, non-matches UNKNOWN     e.g. useful if combining a detailed set of keep- and delete-
-    keep-*   rules mark matches KEEP, non-matches UNKNOWN,      e.g. useful to mark exceptions to a main lose- rule
     
+    # TO RE-SORT:
+    '''        
     We apply all specified rules to all sets, which marks each filename as KEEP, DELETE, or UNKNOWN.
       These are combined conservatively, e.g. KEEP+DELETE = KEEP
       
     We only delete files from decided sets,  which are those with at least one KEEP and no UNKNOWN
       Note that we *never* delete everything: an all-DELETE set is considered undecided)
 
-
- Examples:
+    Examples:
     
       # "I don't care which version you keep"
       duppy -v -d -n --elect-one-random /data/Video
@@ -945,37 +916,23 @@ def main():
       # This may well be indecisive for some sets
       duppy -v -d -n --keep-deepest --keep-path-re '[Aa]rchive' /data/Video
      
-              
-''')
-                sys.exit(0)
-
-            elif opt=='--elect-one-random':
-                rules.append(  ('choose random file in set',                duppy_rules.choose_one_random, {} )  )
+      '''
+    
+    #elif opt=='--elect-one-random':
+                
+    #elif opt=='--lose-path-re':
+    #    rules.append(  ('Delete files from this directory, keep rest',
+    #        duppy_rules.delete_path_re, {'restr':args, 'others':duppy_rules.KEEP} )  )
+    #elif opt=='--delete-path-re':
+    #    rules.append(  ('Delete files from this directory, keep rest',
+    #                            duppy_rules.delete_path_re, {'restr':args, 'others':duppy_rules.UNKN} )  )
+    #elif opt=='--keep-path-re':
+    #    rules.append(  ('Delete files from this directory, keep rest',
+    #                            duppy_rules.keep_path_re, {'restr':args} )  )
 
                 
-            elif opt=='--lose-path':
-                rules.append(  ('Delete files from this directory, keep rest',
-                                duppy_rules.delete_path, {'substr':args, 'others':duppy_rules.KEEP} )  )
-            elif opt=='--delete-path':
-                rules.append(  ('Delete files from this directory, keep rest',
-                                duppy_rules.delete_path, {'substr':args, 'others':duppy_rules.UNKN} )  )
-            elif opt=='--keep-path':
-                rules.append(  ('Delete files from this directory, keep rest',
-                                duppy_rules.keep_path, {'substr':args} )  )
-
-            elif opt=='--lose-path-re':
-                rules.append(  ('Delete files from this directory, keep rest',
-                                duppy_rules.delete_path_re, {'restr':args, 'others':duppy_rules.KEEP} )  )
-            elif opt=='--delete-path-re':
-                rules.append(  ('Delete files from this directory, keep rest',
-                                duppy_rules.delete_path_re, {'restr':args, 'others':duppy_rules.UNKN} )  )
-            elif opt=='--keep-path-re':
-                rules.append(  ('Delete files from this directory, keep rest',
-                                duppy_rules.keep_path_re, {'restr':args} )  )
-
-                
-            #elif opt=='--keep-deepest':
-            #    rules.append(  ('keep file(s) in deepest directory',      duppy_rules.keep_deepest, {} )  )
+    #elif opt=='--keep-deepest':
+    #    rules.append(  ('keep file(s) in deepest directory',      duppy_rules.keep_deepest, {} )  )
                 
             #elif opt=='--keep-shallowest':
             #    rules.append(  ('keep file(s) in shallowest directory',   duppy_rules.keep_shallowest, {} )  )
@@ -991,33 +948,20 @@ def main():
 
             #if verbose >= 2:
             #    print( `opt, args` )
-                
-    except ValueError as e: # most likely from getopt parse call
-        #raise
-        usage()
-        #print 'DEBUG: %s'%e
-        return
 
-    
-    maxreadsize_kb = max(maxreadsize_kb,readsize_kb)
-    readsize       = readsize_kb*1024
-    maxreadsize    = max(readsize, min(4096*1024,maxreadsize_kb*1024)) #truncated at 2M
-    if verbose>=2:
-        print( 'Read block size: %sB'%kmg(readsize) )
-        print( 'Max read block size: %sB'%kmg(maxreadsize) )
 
-    if dry_run and verbose==0:
-        print( "Dry run (-n) without verbosity (-v) would not actually mention anything :)" )
-        sys.exit(-2)
+            
+    if options.verbose>=2:
+        print( 'Read block size: %sB'%kmg(readsize_kb*1024) )
+        print( 'Max read block size: %sB'%kmg(maxreadsize_kb*1024) )
 
     if delete and len(rules)==0: # avoid work before error
         print( "When using delete logic (-d or -n), you need at least one decisive rule" )
-        sys.exit(-2)
-        
+        sys.exit(-2)        
     if default_rules:
         rules.extend( duppy_rules.default_rules() )
-                
-    if verbose >= 2:
+        
+    if options.verbose >= 2:
         print( "--- Ruleset: ---" )
         for name,f,args in rules:
             print( '%s'%name )
@@ -1027,62 +971,85 @@ def main():
 
     #######################################################
     ### The calls that do the work
-    d = ExactDupes(verbose=verbose,
+    d = ExactDupes(verbose=options.verbose,
                  ignore_dirnames=('.svn','.git','.hg', '.bzr','.dropbox.cache'), # TODO: allow additions from arguments
                  minlen=minlen, maxlen=maxlen,
                  stoplen=stoplen,
-                 readsize=readsize, maxreadsize=maxreadsize,
-                 rules=rules, delete=delete, dry_run=dry_run)
+                 readsize=int(1024*readsize_kb), maxreadsize=int(1024*maxreadsize_kb),
+                 rules=rules, delete=delete, dry_run=options.dryrun)
 
     if d.stoplen != 0: # that max isn't strictly correct, but better than just mentioning stoplen
         print( "NOTE: Assuming files are identical after %sB"%kmg(max(d.stoplen, d.readsize)) )
     
     print( "Creating list of files to check..." )
-    if len(fileargs)==0:
-        if delete:
-            print( "Refusing to run with --delete on implied current directory (specify it explicitly)" )
-            sys.exit(-3)
-        if not quiet:
-            print( "   no file arguments given, using current directory" )            
-        d.add( os.getcwd(), recursive )
-        if verbose:
-            sameline('')
-    else:
-        for arg in fileargs:
-            d.add(arg, recursive)
-        if verbose:
-            sameline('')
+    for arg in args:
+        d.add(arg, (not options.norecurse))
+    if options.verbose:
+        sameline('')
 
-    if not quiet:
+    if options.verbose>=1:
         sameline('') # Clear the (last mentioned filename from the) line
         print( "Done scanning, found %d files to check."%d.nfiles )
 
-    if verbose:
+    if options.verbose>=1:
         print( "\nLooking for duplicates..." )
 
     try:
-        d.work( quiet )
+        d.work( quiet=(options.verbose==0) )
     except KeyboardInterrupt:
         print "Ctrl-C, summarizing what we have so far..."
         if delete:
             print " (and skipping the delete pass)"
             delete = False
         
-    if verbose:
+    if options.verbose:
         sameline('') # Clear the status from the line
         print( "Done.\n" )
 
-    if report  or  verbose >= 1:
+    if options.verbose >= 1:
         print( '' )
-        d.report(long=(verbose and not quiet))
+        d.report(long=(options.verbose>=1))
 
-    if delete:        
+    if delete:
         d.apply_delete_rules( )
 
 
 
+    
+if __name__=='__main__':    
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
+    print("\n")
+    
+
+
+
+
+
+#
+#      Tweaking:
+#      
+#      We start reading small blocks (e.g. 32KB or 64KB) because most of the time this is
+#        enough to discover uniqueness, while for larger identical files larger blocks will mean
+#        less overhead in a bulky check.
+#      We increase the basic size to the max as more of the same fileset checks out to be identical
+#        like 32, 64, 128, 256, 512, 512, 512, ...      
+#      
+#      -b        initial block size, in KByte (default: 32)
+#      -m        maximum block size, in KByte (default: 512)                
+#                On many-disk RAID you can raise the latter for some extra speed on large files.
+#                For slightly more modest memory use, you can lower them.
+
+
+    
+
+
+
 def bench():
-    """ This is 84 tests. Makes the most sense to run on a large directory (at least thousands of files)
+    """ This is 84 tests, to see what block sizes are ideal.
+        Makes the most sense to run on a large directory (at least thousands of files)
         Flushes OS caches between runs - don't use this on your production server :)
     """
     
@@ -1120,51 +1087,3 @@ def bench():
     #and once again, for overview
     print( '\n'.join(results) )
 
-
-if __name__=='__main__':
-    
-    try:
-        main()
-    except KeyboardInterrupt:
-        pass
-    print("\n")
-    
-    # TODO: store sequence of hashes, to speed up users who wish to check new files against a large set of existing files
-    #hash_cache_filename = os.path.expanduser('~/.duppy_hash_cache')
-    #try:
-    #    try:
-    #        hcf = open( hash_cache_filename ,'r')
-    #        hash_cache = pickle.load( hcf )
-    #        hcf.close()
-    #    except: # don't have a cache, it's invalid, or whatnot
-    #        hash_cache = {}
-    #    
-    #    try:
-    #        main()
-    #    finally: 
-    #        print "\nSaving hashes for speed boost next time"
-    #        hcf = open( hash_cache_filename ,'wb')
-    #        pickle.dump( hash_cache, hcf )
-    #        hcf.close()
-
-
-
-
-
-
-#
-#      Tweaking:
-#      
-#      We start reading small blocks (e.g. 32KB or 64KB) because most of the time this is
-#        enough to discover uniqueness, while for larger identical files larger blocks will mean
-#        less overhead in a bulky check.
-#      We increase the basic size to the max as more of the same fileset checks out to be identical
-#        like 32, 64, 128, 256, 512, 512, 512, ...      
-#      
-#      -b        initial block size, in KByte (default: 32)
-#      -m        maximum block size, in KByte (default: 512)                
-#                On many-disk RAID you can raise the latter for some extra speed on large files.
-#                For slightly more modest memory use, you can lower them.
-
-
-    

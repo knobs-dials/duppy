@@ -4,21 +4,19 @@ duppy
 
 Duplicate file detector.
 
-Incrementally checks blocks of content, which is pretty fast when you have largeish mostly-unique files,
-because the larger the (unique) files, the more reading you avoid.
+Incrementally checks blocks of content, motivated by the observation that duplicate detection is largely IO-bound, and that unique files are usually unique in the first few dozen KB.
 
-Motivated by the observation that duplicate detection is largely IO-bound, and that unique files are usually unique in the first few dozen KB.
+If you have a lot of large mostly-unique files, this avoids a lot of reading.
 
 
-When there _are_ large duplicates it'll spend most of the time a while verifying,
-and clobber your page cache in the process,
-so you can make it assume equality after some amount of identical bytes. 
+However, when there _are_ a lot of large duplicates, it will most of its time verifying them, and do more seeks than a simpler file-hashing solution would, and still clobber your page cache.
 
-If you want a fast estimate of possible space savings, both make that assumption, and make it ignore the bulk of small files.
-For example,
+...so if you want a faster (but more approximate) estimate of possible space savings, you can make it assume two files are idential after a given amount of identical bytes.
+
+You can also make it ignore small files (would often mean relatively much IO for relatively little savings).
 
 ```
-    # duppy -v -a 32M -s 500K /dosgames
+    # duppy -s 500K -a 32M /dosgames
     NOTE: Assuming files are identical after 32MB
 
     Creating list of files to check...
@@ -57,123 +55,96 @@ For example,
 
 
 Notes / warnings:
-* Should be safe around symlinks (avoids following) and hardlinks (avoids adding the same inode twice - though it wouldn't matter much if we did).
-* ...but does not consider that symlink may be pointing at files we are deleting (because to guarantee that, you have to scan the entire filesystem)
-* I have done basic sanity tests, but don't trust this blindly on files you haven't backed up.
 * think about what your delete rules mean. It'll refuse to delete every copy, but you can still make a mess for yourself.
+* I have done basic sanity tests, but don't trust this blindly on files you haven't backed up.
+
+* Does not consider symlinks readable files, so won't delete them or consider them duplictes of the things they point to.
+* ...but note it can still _break_ symlinks (to not do that, it have to scan the entire filesystem)
+
+* safe around hardlinks in that it avoids adding the same inode twice. There is no space to be saved, and you're probably hardlinking for a reason. (We could still report them, though)
+
+* you may wish to check files between e.g. 1MB and 2MB, then 100KB and 1MB, and so on, because if you run one such subrange repeatedly (looking at the report), most data will still be in the page cache and you won't clobber that cache as fast
 
 
 Options
 ===
 ```
-    Usage: duppy [options] path [path...]
+Usage: duppy [options]
 
-       Finds duplicate files.
-
-       By default only prints a summary of wasted space.
-       Use -v for a full list of duplicates (I feel more comfortable manually deleting based on this output)
-        or -d and some rules to automate deletion.
-
-       Options:
-          -q             be quiet while working.   Access errors are still reported.
-          -v             be verbose about progress, report all duplicate file sets. Specify twice for even more.
-
-          -R             Non-recursive.
-                         (To run on only files in curdr -R,  and * (not .) for the argument)
-
-          -s size    minimum size. Ignore files smaller than this size.  Default is 1, only ignores zero-length files.
-                     (useful to find major space saving in less time)
-          -S size    maximum size
-                     (sometimes useful in a "now look at just the files between 100KB and 200KB",
-                      which makes repeated runs faster since most data will still be cached)
-
-          -a size    Assume a set is identical after this many matching bytes, e.g.  -a 32MB
-                     Meant for dry-runs, for a faster _estimation_ of wasted space,
-                     but WARNING: it will also apply to real runs. While this _usually_ makes sense
-                     (most files that are distinct are so within ~150KB), *know for sure* that it makes sense for your case.
-
-
-       Rules and deleting:
-          --rule-help            List of rules, and examples of use.
-          -n                     Apply rules - in a dry run. Will say what it would do, but delete nothing.
-          -d                     Apply rules, and delete files from sets that are marked DELETE (and that also have at least one KEEP).
-
-       Examples:
-          # Just list what is duplicate
-          duppy -v .
-
-          # faster estimation of bulk space you could probably free  (note: not a full check)
-          duppy -v -s 10M -a 20M /data/Video
-
-          # work on the the specific files we mention, and no recursion
-          duppy -vR *
+Options:
+  -h, --help            show this help message and exit
+  -v VERBOSE            0 prints only summary, 1 (default) prints file sets
+  -s MINSIZE            Minimum file size to include. Defaults to 1.Note that
+                        all bytesize arguments understand values like '10M'
+  -S MAXSIZE            Maximum file size to include.
+  -R                    Default is recursive. Specify this (and files, e.g. *)
+                        to not recurse into directories.
+  -a STOPLEN            Assume a set is identical after this amount of data.
+                        Useful to avoid checking all of very large files, but
+                        be careful when cobmbining with -d
+  -b READSIZE           Inital read size, rounded to nearest KB. Defaults to
+                        32KB.
+  -m MAXREADSIZE        Chunks to read at a time once more checks out. Rounded
+                        to nearest KB. defaults to 256KB. Can be higer on
+                        RAID.
+  -d, --delete          Apply rules to figure out what to delete. If a set is
+                        decided, and you did not specify -n, will actually
+                        delete.
+  -n, --dry-run         When combined with -d, will only say what it would do.
+  --elect-one-random    Mark one KEEP, the rest DELEte. Easiest and most
+                        arbitrary.
+  --keep-path=KEEP_SUBSTR
+                        mark KEEP by absolute filename substring
+  --delete-path=DELE_SUBSTR
+                        mark DELEte by absolute filename substring
 ```
 
 
-Delete rule options (still sort of an experiment)
-===
-```
-        The set is currently
-            --elect-one-random                      keep one, the easiest and most arbitrary way to go.
-            --(keep,delete,lose)-path=SUBSTR        match absolute path by substring
-            --(keep,delete,lose)-path-re=REGEXP     match absolute path with regular expressions, mark any matches KEEP
-            --(keep,delete,lose)-newest             looks for file(s) with the most recent time  (and for each file uses max(mtime,ctime))
-            --(keep,delete,lose)-deepest            keep file in deepest directory.   Useful when you typically organize into directories.
-            --(keep,delete,lose)-shallowest         keep file in shallowest directory. Useful in similar cases.
-            --(keep,delete,lose)-longest-path       considers string length of full path
-            --(keep,delete,lose)-longest-basename   considers string length of just the filename (not the path to the directory it is in)
+Examples:
 
-        lose-*   rules mark matches DELETE, non-matches as KEEP     so by themselves they are decisive
-        delete-* rules mark matches DELETE, non-matches UNKNOWN     e.g. useful if combining a detailed set of keep- and delete-
-        keep-*   rules mark matches KEEP, non-matches UNKNOWN,      e.g. useful to mark exceptions to a main lose- rule
+* Just list what is duplicate:
+    duppy .
 
-        We apply all specified rules to all sets, which marks each filename as KEEP, DELETE, or UNKNOWN.
-          These are combined conservatively, e.g. KEEP+DELETE = KEEP
+* faster estimation of bulk space you could probably free  (note: not a full check)
+    duppy -s 10M -a 20M /data/Video
 
-        We only delete files from decided sets,  which are those with at least one KEEP and no UNKNOWN
-          Note that we *never* delete everything: an all-DELETE set is considered undecided)
+* work on the the specific files we mention, and no recursion if that includes a directory
+    duppy -R data*
 
 
-     Examples:
-
-          # "I don't care which version you keep"
-          duppy -v -d -n --keep-one-random /data/Video
-
-          # "Right, I just downloaded a load of images, and I have most already. Clean from this new dir"
-          duppy -v -d -n --delete-path '/data/images/justdownloaded/' /data/images
-
-          # "assume that anything sorted into a deeper directory, and anything named archive, needs to stay"
-          # This may well be indecisive for some sets
-          duppy -v -d -n --keep-deepest --keep-path-re '[Aa]rchive' /data/Video
-```
-
-
+* If you find duplicates, and any of them is in a directory called justdownloaded, choose that to delete
+    duppy . -d -n --delete-path=/justdownloaded/
 
 
 
 TODO:
 =====
-* consider verbosity by default (I always use -v)
+* test on windows
+
+* rethink the delete rules. There's much more logic beneath all this, but it's nontrivial to use so I took most of it out (of the options)
+* maybe rip out the rules after all? (I usually look at the output and delete manually)
+
+* cleanup
 
 * More sanity checks, and regression tests. I _really_ don't want to have to explain that we deleted all your files due to a silly bug  :)
 
 * figure out why the 'total read' sum is incorrect
 
-* cleanup. Until now I mainly didn't release it because it needed cleaning. Typical :)
-
-* think about the clarity of the rule system
-* maybe rip out the rules after all? (I usually look at the -v output and delete manually)
-
-* test on windows
 
 
 CONSIDERING:
-* page-cache-non-clovvering
+* progress bar for larger files
+
+* page-cache-non-clobbering (posix_fadvise(POSIX_FADV_DONTNEED), though it's only in os since py3.3)
+
+* hardlink duplicate files that are on the same filesystem
 
 * consider a homedir config of permant rules (for things like "always keep stuff from this dir")
 
 * consider having an IO thread (minor speed gains?)
 
 * storing a cache with (fullpath,mtime,size,hash(first64kB)) or so in your homedir,
-  for incremental checks on slowly growing directories
+  for incremental checks will much less IO, particularly on slowly growing directories
   (storage should be on the order of ~35MB per 100k files, acceptable for most)
+
+* --generate-ruleset   interactively generate a rule file based on common patterns in a set of files
