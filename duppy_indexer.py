@@ -17,9 +17,9 @@ class Indexer(object):
     
     def __init__(self, ignore_dirnames=(), ignore_abspaths=(), verbose=False, print_callback=None):
         if print_callback==None:
-            def nothing(x):
+            def do_nothing(x):
                 pass
-            self.print_callback = nothing
+            self.print_callback = do_nothing
         else:
             self.print_callback = print_callback
         

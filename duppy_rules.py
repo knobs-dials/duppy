@@ -18,7 +18,7 @@ import os
 import re
 import random
 
-# not: min() and max() have meaning
+# note: min() and max() have meaning
 KEEP = 2
 DELE = 1
 UNKN = 0

@@ -99,6 +99,7 @@ import re
 from duppy_indexer import Indexer
 import duppy_rules
 
+
 try:
     import setproctitle
     setproctitle.setproctitle( os.path.basename(sys.argv[0]) )
@@ -106,6 +107,7 @@ except ImportError:
     pass
 
 
+# get terminal width, to do for same-line feedback
 try:
     from helpers_shellcolor import tty_size
 except ImportError:
@@ -133,6 +135,22 @@ except: #Not on *nix, the int cast failing on non-information, etc. Fall back on
 
 
 ### Helper functons
+
+def sameline(s, stream=sys.stderr):
+    """ Used for newlineless tally: Prints the given string on the given stream (defaults to stderr),
+        then clears the rest of the line and goes to the start of the same line.
+        (so to go on with normal printing you'ld want a sameline('') first)
+
+        Requries ANSI capability.
+        TODO: test for that.
+
+        Tries to prevent new lines caused by wrapping of long strings (filename)
+        by printing only first so-many characters of a filename.
+    """
+    stream.write(s[:termcols-2])
+    stream.write('\x1b[K\r') #clear line after cursor, send cursor to start of line
+    stream.flush()
+    
 
 def kmg(bytes,kilo=1024): 
     """ Readable size formatter.
@@ -197,27 +215,12 @@ def parse_kmg(str, kilo=1024):
 
 
 
-def sameline(s, stream=sys.stderr):
-    """ Used for newlineless tally: Prints the given string on the given stream (defaults to stderr),
-        then clears the rest of the line and goes to the start of the same line.
-        (so to go on with normal printing you'ld want a sameline('') first)
-
-        Requries ANSI capability.
-        TODO: test for that.
-
-        Tries to prevent new lines caused by wrapping of long strings (filename)
-        by printing only first so-many characters of a filename.
-    """
-    stream.write(s[:termcols-2])
-    stream.write('\x1b[K\r') #clear line after cursor, send cursor to start of line
-    stream.flush()
-    
-
-
+# most logic    
 
 class ExactDupes(Indexer):
     ''' Looks for exact file content duplicates.
-        Expands on the indexer class, wrapping its state with some of our own '''
+        Wraps indexer class to add some state of our own.
+    '''
     def __init__(self,
                  # indexer stuff:
                  minlen=1, maxlen=None,
@@ -291,9 +294,6 @@ class ExactDupes(Indexer):
 
     def work(self,quiet=False):
         ''' Does the work of figuring out which of the currently add()ed files are duplicates '''
-        #if self.verbose>=1:
-        #    sameline("%d files added to be checked"%self.nfiles)
-        
         ncases = len(self.persize)
         handled_cases = 0
         handled_files = 0
@@ -484,7 +484,7 @@ class ExactDupes(Indexer):
                                 #raise
                                 tempset = {} # forget this bucket
                                 # Basically, just break off this bucket
-                                # TODO: do this properly, or at least check that it makes sense - it currently leaves the bucket sort of half finished
+                                # TODO: check that it makes sense - it currently leaves the bucket sort of half finished
                                 # (though if my sleep deprived eyes don't fail me, this means newset will simply be empty)
 
 
@@ -547,18 +547,6 @@ class ExactDupes(Indexer):
         finally:
             self.work_time = time.time() - start_time
         
-
-    def check_bug(self):
-        seen_filenames=set()
-        
-        for size in sorted(self.dup_sets):
-            for dupset in self.dup_sets[size]:
-                dss = set(dupset) # for easy equality check
-
-                seen_and_current = seen_filenames.intersection(dss)
-                if len( seen_and_current )>0:
-                    raise ValueError('Broken assumption / bug: a path appears in more than one duplicate set (unsafe to apply delete logic). Problem case is one or more of %r (size %d)'%(seen_and_current,size))
-                seen_filenames.update(dss)
 
     
             
@@ -696,8 +684,6 @@ class ExactDupes(Indexer):
         deleted_bytes  = 0
         undecided_sets = 0
 
-        self.check_bug() # temporary
-
         for size in sorted(self.dup_sets):
             for dupset in self.dup_sets[size]:
             
@@ -769,13 +755,9 @@ def main():
     from optparse import OptionParser
     p = OptionParser() # Has some options, but we're ignoring them here
 
-    p.add_option("-v",# "--verbosity",
-                 dest="verbose", default=1,
-                 help="0 prints only summary, 1 (default) prints file sets") # , 2 for debug info.
-
     p.add_option("-s", #"--min-size",
                  dest="minsize", default='1',
-                 help="Minimum file size to include. Defaults to 1.Note that all bytesize arguments understand values like '10M'") 
+                 help="Minimum file size to include. Defaults to 1. Note that bytesize arguments understand values like 10M") 
     p.add_option("-S", #"--max-size",
                  dest="maxsize", default=None,
                  help="Maximum file size to include.") 
@@ -796,20 +778,21 @@ def main():
 
     
     p.add_option("-a", #"--assume-after",
-                 dest="stoplen", default='0', help="Assume a set is identical after this amount of data. Useful to avoid checking all of very large files, but be careful when cobmbining with -d")
+                 dest="stopsize", default='0', help="Assume a set is identical after this amount of data. Useful to avoid checking all of very large files, but be careful when cobmbining with -d")
     
     p.add_option("-b", #"--read-size",
                  dest="readsize",    default='32768',
-                 help="Inital read size, rounded to nearest KB. Defaults to 32KB.") 
+                 help="Inital size of read chunks, rounded to nearest KB. Defaults to 32KB.") 
     p.add_option("-m", #"--max-read-size",
                  dest="maxreadsize", default='131072',
-                 help="Chunks to read at a time once more checks out. Rounded to nearest KB. defaults to 256KB. Can be higer on RAID.") 
+                 help="Chunks to read at a time once more checks out. Rounded to nearest KB. Defaults to 256KB. Higher values can be sensible on RAID.") 
 
 
-        
- 
+    p.add_option("-v",# "--verbosity",
+                 dest="verbose", default=1,
+                 help="0 prints only summary, 1 (default) prints file sets") # , 2 for debug info.
 
-    
+          
      
     ## Delete and rule stuff
 
@@ -817,6 +800,7 @@ def main():
 
     p.add_option("-n", "--dry-run",  dest="dryrun", default=False, action='store_true', help="When combined with -d, will only say what it would do.")
 
+    
     p.add_option('--elect-one-random', dest='elect_random',action='store_true', default=False,
                  help='Mark one KEEP, the rest DELEte. Easiest and most arbitrary.')
 
@@ -849,6 +833,8 @@ def main():
     if len(args)==0:
         print "\nERROR: Specify directories or files to work on"
 
+        p.print_help()
+        
         print ('''\n        
 Examples:
   Just list what is duplicate
@@ -857,7 +843,7 @@ Examples:
   Faster estimation of freeable space: only look at large files, and don't check completely.
     duppy -s 10M -a 20M /data/Video
 
-  Work on the the specific files in the current directory (specify files, and no recursion)
+  Work on the files in the current directory (specify files, and no recursion)
     duppy -R *
         ''')
         sys.exit(-1)
@@ -881,7 +867,7 @@ Examples:
     else:
         maxlen = None
     
-    stoplen = parse_kmg( options.stoplen )
+    stoplen = parse_kmg( options.stopsize )
                 
     rules = []
     default_rules = True
