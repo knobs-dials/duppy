@@ -94,7 +94,7 @@ Further example commands:
 
         duppy -R frames_*
 
-* When you have many files, e.g. checking all files between 1M and 2M, then 2 and 3, etc. is likelier to fit in page cache, and not clobber it so quickly (also makes it more likely that repeated runs on the same files is served from RAM)
+* When you have many files, e.g. checking all files between 15MB and 20M, then 5 and 15MB, etc. for faster results of just the larger files (also makes it more likely that repeated runs on the same files is served from RAM, and we don't clobber it so quickly)
 
         duppy -s 15M -S 20M /data/varied
 
