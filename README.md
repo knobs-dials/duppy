@@ -1,9 +1,13 @@
 duppy
 ================
 
-Duplicate file detection by incrementally checking blocks of content.
+Duplicate file detection by incrementally checking blocks of content, and only within file sets with the same size.
 
-Motivated by the observation that duplicate detection is largely IO-bound (and the larger the files, specifically read-bound), and that unique files are usually unique in the first few dozen KB. If you have a lot of large mostly-unique files, we avoid a lot of reading.
+If you have a lot of largeish mostly-unique files, we avoid reading most data. ...though still seek a bunch,
+which is why on smaller files we don't save much, particularly on platter derives as that becomes seek-bound.
+
+Motivated by the observation that duplicate detection is largely IO-bound, and that unique files are usually unique in the first few dozen KB.
+
 
 
 Options
@@ -14,12 +18,12 @@ Usage: duppy [options]
 Options:
   -h, --help            show this help message and exit
   -v VERBOSE            0 prints only summary, 1 (default) prints file sets
-  -s MINSIZE            Minimum file size to include. Defaults to 1.Note that
-                        all bytesize arguments understand values like '10M'
-  -S MAXSIZE            Maximum file size to include.
   -R                    Default is recursive. Specify this (and files, e.g. *)
                         to not recurse into directories.
-  -a STOPLEN            Assume a set is identical after this amount of data.
+  -s MINSIZE            Minimum file size to include - because for small files we are seek-bound.
+                        Defaults to 1. Note that all bytesize arguments understand values like '10M'
+  -S MAXSIZE            Maximum file size to include. With -s allows working on ranges of sizes.
+  -a STOPSIZE           Assume a set is identical after this amount of data.
                         Useful to avoid checking all of very large files, but
                         be careful when cobmbining with -d
   -b READSIZE           Inital read size, rounded to nearest KB. Defaults to
@@ -38,32 +42,6 @@ Options:
   --delete-path=DELE_SUBSTR
                         mark DELEte by absolute filename substring
 ```
-
-
-Examples:
-
-* Just list what is duplicate:
-
-        duppy .
-
-* work on the the specific files we mention, and no recursion if that includes a directory
-
-        duppy -R data*
-
-* If you find duplicates, and any of them is in a directory called justdownloaded, choose that to delete
-
-        duppy . -d -n --delete-path=/justdownloaded/
-
-* fast and rough estimate of possible space savingss: ignore files smaller than 500KB, assume files are identical after 32MB
-
-        duppy -s 500K -a 32M /dosgames
-
-
-The last because 
-* small files mean relatively much IO for relatively little savings
-
-* when there _are_ a lot of large duplicates, it will most of its time verifying them, still clobber your page cache, and do more seeks than a simpler file-hashing solution would
-
 
 
 
@@ -105,17 +83,41 @@ Example output:
 
 
 
+Examples:
+
+* Just list what is duplicate:
+
+        duppy .
+
+* fast and rough estimate of possible savings: ignore files smaller than 500KB (they would be most IO and probably little savings), assume files are identical after 32MB (when there are _large_ duplicates, they'll clobber your cache. Less reading is fine when you only want an estimation)
+
+        duppy -s 500K -a 32M /dosgames
+
+* work on the the specific files we mention, and no recursion if that includes a directory
+
+        duppy -R frames_*
+
+* When you have many files, e.g. checking all files between 1M and 2M, then 2 and 3, etc. is likelier to fit in page cache, and not clobber it so fast (also so that repeated runs are served from RAM)
+
+        duppy -s 15M -S 20M /data/varied
+
+* If you find duplicates, and any of them is in a directory called justdownloaded, choose that to delete
+
+        duppy . -d -n --delete-path=/justdownloaded/
+
+
+
+
 Notes / warnings:
 =====
-* think about what your delete rules mean. It'll refuse to delete every copy, but you can still make a mess for yourself.
-* I have done basic sanity tests, but don't trust this blindly on files you haven't backed up.
-
-* Does not consider symlinks readable files, so won't delete them or consider them duplictes of the things they point to.
-* ...but note it can still _break_ symlinks (to not do that, it have to scan the entire filesystem)
-
 * safe around hardlinks in that it avoids adding the same inode twice. There is no space to be saved, and you're probably hardlinking for a reason. (We could still report them, though)
 
-* you may wish to check files between e.g. 1MB and 2MB, then 100KB and 1MB, and so on, because if you run one such subrange repeatedly (looking at the report), most data will still be in the page cache and you won't clobber that cache as fast
+* Skips symlinks - does not consider them to be files, so won't delete the links or consider their content.
+* ..but: it can still _break_ symlinks (and ensuring we won't would require scanning all mounted filesystems)
+
+* On delete logic:
+** think about what your delete rules mean. It'll refuse to delete every copy, but you can still make a mess for yourself.
+** Standard disclaimer: While I have done basic sanity tests, but don't use any of the delete stuff on files you haven't backed up.
 
 
 
@@ -123,7 +125,7 @@ TODO:
 =====
 * test on windows
 
-* rethink the delete rules. There's much more logic beneath all this, but it's nontrivial to use so I took most of it out (of the options)
+* rethink the delete rules. There's much more logic beneath all this, but it should be more obvious to use before I put it back in
 * maybe rip out the rules after all? (I usually look at the output and delete manually)
 
 * cleanup
@@ -133,20 +135,21 @@ TODO:
 * figure out why the 'total read' sum is incorrect
 
 
-
 CONSIDERING:
-* progress bar for larger files
+* homedir config of permanent rules (for things like "always keep stuff from this dir")
+
+* IO thread (minor speed gains?)
+
+* progress bar to give feedback when checking larger files
 
 * page-cache-non-clobbering (posix_fadvise(POSIX_FADV_DONTNEED), though it's only in os since py3.3)
-
-* hardlink duplicate files that are on the same filesystem
-
-* consider a homedir config of permant rules (for things like "always keep stuff from this dir")
-
-* consider having an IO thread (minor speed gains?)
 
 * storing a cache with (fullpath,mtime,size,hash(first64kB)) or so in your homedir,
   for incremental checks will much less IO, particularly on slowly growing directories
   (storage should be on the order of ~35MB per 100k files, acceptable for most)
+
+* hardlink duplicate files that are on the same filesystem
+
+* rethink the delete and rule logic.
 
 * --generate-ruleset   interactively generate a rule file based on common patterns in a set of files

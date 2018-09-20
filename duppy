@@ -227,7 +227,7 @@ class ExactDupes(Indexer):
                  ignore_dirnames=(),
                  ignore_abspaths=(),
                  # main work stuff
-                 stoplen=0,
+                 stopsize=0,
                  follow_sym=False, # indexer
                  verbose=False,
                  readsize=64*1024, maxreadsize=256*1024,
@@ -237,7 +237,7 @@ class ExactDupes(Indexer):
         ''' The first few arguments are handed to the indexer.
               minlen allows checking for only larger files.   Default is 1 to ignore zero-length files.
  
-            stoplen allows "okay, 1GB of this 300GB file matched, just assume they're identical".
+            stopsize allows "okay, 1GB of this 300GB file matched, just assume they're identical".
             This is a shortcut that makes sense in some contexts.  Default is 0, meaning 'don't assume this'
  
             if delete==True, will add a phase where we apply rules to sets to decide what to delete
@@ -261,7 +261,7 @@ class ExactDupes(Indexer):
         self.maxlen = maxlen
         self.follow_sym = follow_sym
 
-        self.stoplen = stoplen
+        self.stopsize = stopsize
         self.skipped_assumptions = 0
 
         self.delete  = delete
@@ -337,7 +337,7 @@ class ExactDupes(Indexer):
             keys_which_are_sizes = list(self.persize.keys())
 
             # Time statistics make the most sense when we shuffle the things to do
-            #  (not ideal for cache, but that's hard to predict without )
+            #  (not ideal for page cache, but that's hard to predict - and most times it either all fits, or doesn't and will wipe itself anyway)
             random.shuffle(keys_which_are_sizes)
 
             # Doing the smallest first
@@ -453,13 +453,13 @@ class ExactDupes(Indexer):
                                         self.dup_sets[size].append( workset[k] )
                                         break  # we're done
 
-                                    elif self.stoplen!=0 and offset>self.stoplen:
+                                    elif self.stopsize!=0 and offset>self.stopsize:
                                         #if verbose:
                                         sameline('')
                                         print( "Assuming %d files (%s) are identical after %sB (of %sB)"%(
                                             len(workset[k]),
                                             ', '.join(repr(e) for e in workset[k]),
-                                            kmg(self.stoplen),
+                                            kmg(self.stopsize),
                                             kmg(size),
                                             ) )
                                         # CONSIDER: Could keep track of how much data we skipped.
@@ -489,7 +489,7 @@ class ExactDupes(Indexer):
 
 
                         # We've resorted workset into tempset
-                        #  No inspect how distinct things are, and create a new set for the next loop
+                        #  Now inspect how distinct things are, and create a new set for the next loop
 
                         # anything that is now not unique  is copied from tempset to the next round's workset
                         if self.verbose >= 3:
@@ -619,7 +619,7 @@ class ExactDupes(Indexer):
                 ) )
 
         if self.skipped_assumptions>0:
-            print( "  Found %d sets of duplicate files   (Warning: %d were ASSUMED to be equal after %sB)"%(total_sets, self.skipped_assumptions, kmg(self.stoplen)) )
+            print( "  Found %d sets of duplicate files   (Warning: %d were ASSUMED to be equal after %sB)"%(total_sets, self.skipped_assumptions, kmg(self.stopsize)) )
         else:
             print( "  Found %d sets of duplicate files"%(total_sets) )
                                     
@@ -755,6 +755,11 @@ def main():
     from optparse import OptionParser
     p = OptionParser() # Has some options, but we're ignoring them here
 
+    p.add_option("-R", #"--not-recursive",
+                 dest="norecurse", default=False, action='store_true',
+                 help="Default is recursive. Specify this (and files, e.g. *) to not recurse into directories.")
+
+    
     p.add_option("-s", #"--min-size",
                  dest="minsize", default='1',
                  help="Minimum file size to include. Defaults to 1. Note that bytesize arguments understand values like 10M") 
@@ -771,11 +776,6 @@ def main():
     #p.add_option("-F",
     #             dest="globfilter", default='None',
     #             help="Exclude filenames that do not match this substring, e.g. -g '/text/'. Can be specified more than once.")
-    
-    p.add_option("-R", #"--not-recursive",
-                 dest="norecurse", default=False, action='store_true',
-                 help="Default is recursive. Specify this (and files, e.g. *) to not recurse into directories.")
-
     
     p.add_option("-a", #"--assume-after",
                  dest="stopsize", default='0', help="Assume a set is identical after this amount of data. Useful to avoid checking all of very large files, but be careful when cobmbining with -d")
@@ -867,7 +867,7 @@ Examples:
     else:
         maxlen = None
     
-    stoplen = parse_kmg( options.stopsize )
+    stopsize = parse_kmg( options.stopsize )
                 
     rules = []
     default_rules = True
@@ -960,12 +960,12 @@ Examples:
     d = ExactDupes(verbose=options.verbose,
                  ignore_dirnames=('.svn','.git','.hg', '.bzr','.dropbox.cache'), # TODO: allow additions from arguments
                  minlen=minlen, maxlen=maxlen,
-                 stoplen=stoplen,
+                 stopsize=stopsize,
                  readsize=int(1024*readsize_kb), maxreadsize=int(1024*maxreadsize_kb),
                  rules=rules, delete=delete, dry_run=options.dryrun)
 
-    if d.stoplen != 0: # that max isn't strictly correct, but better than just mentioning stoplen
-        print( "NOTE: Assuming files are identical after %sB"%kmg(max(d.stoplen, d.readsize)) )
+    if d.stopsize != 0: # that max isn't strictly correct, but better than just mentioning stopsize
+        print( "NOTE: Assuming files are identical after %sB"%kmg(max(d.stopsize, d.readsize)) )
     
     print( "Creating list of files to check..." )
     for arg in args:
