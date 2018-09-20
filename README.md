@@ -111,26 +111,37 @@ Notes / warnings:
 
 Delete logic
 =====
+* There are some parameters that assist deleting files
+
+* which will refuse to delete every copy - but note that doesn't mean you can't make a mess for yourself
+
+* note also -n, dry-run, which only tells you what it would do
+
 * Example: If you find duplicates, and any of them is in a directory called justdownloaded, choose that to delete
 
         duppy . -d -n --delete-path=/justdownloaded/
 
-* On delete logic:
-** think about what your delete rules mean. It'll refuse to delete every copy, but you can still make a mess for yourself.
-** Standard disclaimer: While I have done basic sanity tests (and am brave enough to run this on my own files), you may want a backup and not run this on your only copy of something.
+* Example: If you find duplicates, keep a random one within the set.
+
+        duppy . -d -n --elect-one-random /imagetorrent/
+
+* Standard disclaimer: While I have done basic sanity tests (and am brave enough to run this on my own files), you may want a backup and not run this on your only copy of something.
+
 
 
 TODO:
 =====
-* test on windows
-
 * rethink the delete rules. There's much more logic beneath all this, but it should be much simpler to understand before I put that back in
 * maybe rip out the rules after all? (I usually look at the output and delete manually)
 * maybe consider generating a ruleset based on common patterns in a set of files?
 
 * code cleanup
 
-* More sanity checks, and regression tests.
+* test on windows
+
+* More sanity checks
+
+* regression tests
 
 * figure out why the 'total read' sum is incorrect
 
@@ -141,7 +152,7 @@ CONSIDERING:
 * progress bar, to give feedback when checking large files
 
 * storing a cache with (fullpath,mtime,size,hash(first64kB)) or so in your homedir,
-  for incremental checks can read just that file before they hit the fs tree
+  as we can probably eliminate most sets from read just that file, before they hit the fs tree.
   (storage should be on the order of ~35MB per 100k files, acceptable to most uses)
 
 * allow hardlinking duplicate files (that are on the same hardlink-supporting filesystem)
