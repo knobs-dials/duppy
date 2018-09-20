@@ -45,12 +45,13 @@ Options:
 
 
 
-Example output:
+Example:
 ```
+    $ duppy -s 500K -a 32M /dosgames
+
     NOTE: Assuming files are identical after 32MB
 
     Creating list of files to check...
-       no file arguments given, using current directory
     Done scanning, found 8423 files to check.
 
     Looking for duplicates...
@@ -83,28 +84,19 @@ Example output:
 
 
 
-Examples:
+Further example commands:
 
-* Just list what is duplicate:
+* No shortcuts, just list what is duplicate:
 
         duppy .
-
-* fast and rough estimate of possible savings: ignore files smaller than 500KB (they would be most IO and probably little savings), assume files are identical after 32MB (when there are _large_ duplicates, they'll clobber your cache. Less reading is fine when you only want an estimation)
-
-        duppy -s 500K -a 32M /dosgames
 
 * work on the the specific files we mention, and no recursion if that includes a directory
 
         duppy -R frames_*
 
-* When you have many files, e.g. checking all files between 1M and 2M, then 2 and 3, etc. is likelier to fit in page cache, and not clobber it so fast (also so that repeated runs are served from RAM)
+* When you have many files, e.g. checking all files between 1M and 2M, then 2 and 3, etc. is likelier to fit in page cache, and not clobber it so quickly (also makes it more likely that repeated runs on the same files is served from RAM)
 
         duppy -s 15M -S 20M /data/varied
-
-* If you find duplicates, and any of them is in a directory called justdownloaded, choose that to delete
-
-        duppy . -d -n --delete-path=/justdownloaded/
-
 
 
 
@@ -115,22 +107,30 @@ Notes / warnings:
 * Skips symlinks - does not consider them to be files, so won't delete the links or consider their content.
 * ..but: it can still _break_ symlinks (and ensuring we won't would require scanning all mounted filesystems)
 
+
+
+Delete logic
+=====
+* Example: If you find duplicates, and any of them is in a directory called justdownloaded, choose that to delete
+
+        duppy . -d -n --delete-path=/justdownloaded/
+
 * On delete logic:
 ** think about what your delete rules mean. It'll refuse to delete every copy, but you can still make a mess for yourself.
-** Standard disclaimer: While I have done basic sanity tests, but don't use any of the delete stuff on files you haven't backed up.
-
+** Standard disclaimer: While I have done basic sanity tests (and am brave enough to run this on my own files), you may want a backup and not run this on your only copy of something.
 
 
 TODO:
 =====
 * test on windows
 
-* rethink the delete rules. There's much more logic beneath all this, but it should be more obvious to use before I put it back in
+* rethink the delete rules. There's much more logic beneath all this, but it should be much simpler to understand before I put that back in
 * maybe rip out the rules after all? (I usually look at the output and delete manually)
+* maybe consider generating a ruleset based on common patterns in a set of files?
 
-* cleanup
+* code cleanup
 
-* More sanity checks, and regression tests. I _really_ don't want to have to explain that we deleted all your files due to a silly bug  :)
+* More sanity checks, and regression tests.
 
 * figure out why the 'total read' sum is incorrect
 
@@ -138,18 +138,13 @@ TODO:
 CONSIDERING:
 * homedir config of permanent rules (for things like "always keep stuff from this dir")
 
-* IO thread (minor speed gains?)
+* progress bar, to give feedback when checking large files
 
-* progress bar to give feedback when checking larger files
+* storing a cache with (fullpath,mtime,size,hash(first64kB)) or so in your homedir,
+  for incremental checks can read just that file before they hit the fs tree
+  (storage should be on the order of ~35MB per 100k files, acceptable to most uses)
+
+* allow hardlinking duplicate files (that are on the same hardlink-supporting filesystem)
 
 * page-cache-non-clobbering (posix_fadvise(POSIX_FADV_DONTNEED), though it's only in os since py3.3)
 
-* storing a cache with (fullpath,mtime,size,hash(first64kB)) or so in your homedir,
-  for incremental checks will much less IO, particularly on slowly growing directories
-  (storage should be on the order of ~35MB per 100k files, acceptable for most)
-
-* hardlink duplicate files that are on the same filesystem
-
-* rethink the delete and rule logic.
-
-* --generate-ruleset   interactively generate a rule file based on common patterns in a set of files
