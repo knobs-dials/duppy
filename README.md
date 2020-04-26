@@ -3,11 +3,12 @@ duppy
 
 Duplicate file detection by incrementally checking blocks of content, and only within file sets with the same size.
 
-If you have a lot of largeish mostly-unique files, we avoid reading most data. ...though still seek a bunch,
-which is why on smaller files we don't save much, particularly on platter derives as that becomes seek-bound.
-
 Motivated by the observation that duplicate detection is largely IO-bound, and that unique files are usually unique in the first few dozen KB.
 
+
+If you have a lot of large mostly-unique files, we avoids reading most data. 
+
+But on small-enough files we save nothing, particularly on platter drives as that becomes seek-bound.
 
 
 Options
