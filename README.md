@@ -1,14 +1,14 @@
 duppy
 ================
 
-Duplicate file detection by incrementally checking blocks of content, and only within file sets with the same size.
+Duplicate file detection that checks blocks of content at a time. Motivated by the observation that unique files are usually unique in the first few dozen KB, so duplicate detection is often largely IO-bound.
 
-Motivated by the observation that duplicate detection is largely IO-bound, and that unique files are usually unique in the first few dozen KB.
+...also only checks within file sets with the same size, to avoid including files that can't be exact content duplicates.
 
 
-If you have a lot of large mostly-unique files, we avoids reading most data. 
+So if you have a lot of large mostly-unique files, we avoid reading most data. 
 
-But on small-enough files we save nothing, particularly on platter drives as that becomes seek-bound.
+That said, on a huge set of small-enough files we save little, and on platter drives there's a point that it becomes seek-bound instead.
 
 
 Options
@@ -30,8 +30,7 @@ Options:
   -b READSIZE           Inital read size, rounded to nearest KB. Defaults to
                         32KB.
   -m MAXREADSIZE        Chunks to read at a time once more checks out. Rounded
-                        to nearest KB. defaults to 256KB. Can be higer on
-                        RAID.
+                        to nearest KB. defaults to 256KB. Can be upped on RAID.
   -d, --delete          Apply rules to figure out what to delete. If a set is
                         decided, and you did not specify -n, will actually
                         delete.
