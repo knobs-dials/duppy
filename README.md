@@ -131,6 +131,8 @@ Delete logic
 
 TODO:
 =====
+* resolve symlink argument paths (only just noticed that)
+
 * rethink the delete rules. There's much more logic beneath all this, but it should be much simpler to understand before I put that back in
 * maybe rip out the rules after all? (I usually look at the output and delete manually)
 * maybe consider generating a ruleset based on common patterns in a set of files?
