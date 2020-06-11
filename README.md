@@ -7,7 +7,7 @@ Also only checks within file sets with the same size, to avoid including files t
 
 So if you have a lot of large mostly-unique files, we avoid reading most data. 
 
-That said, on a set of small files we save little, and on platter drives this can become seek-bound instead.
+(That said, on a set of small files we save little, and on platter drives this can become seek-bound instead)
 
 
 
