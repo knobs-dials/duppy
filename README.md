@@ -10,41 +10,6 @@ So if you have a lot of large mostly-unique files, we avoid reading most data.
 (That said, on a set of small files we save little, and on platter drives this can become seek-bound instead)
 
 
-
-Options
-===
-```
-Usage: duppy [options]
-
-Options:
-  -h, --help            show this help message and exit
-  -v VERBOSE            0 prints only summary, 1 (default) prints file sets
-  -R                    Default is recursive. Specify this (and files, e.g. *)
-                        to not recurse into directories.
-  -s MINSIZE            Minimum file size to include - because for small files we are seek-bound.
-                        Defaults to 1. Note that all bytesize arguments understand values like '10M'
-  -S MAXSIZE            Maximum file size to include. With -s allows working on ranges of sizes.
-  -a STOPSIZE           Assume a set is identical after this amount of data.
-                        Useful to avoid checking all of very large files, but
-                        be careful when cobmbining with -d
-  -b READSIZE           Inital read size, rounded to nearest KB. Defaults to
-                        32KB.
-  -m MAXREADSIZE        Chunks to read at a time once more checks out. Rounded
-                        to nearest KB. defaults to 256KB. Can be upped on RAID.
-  -d, --delete          Apply rules to figure out what to delete. If a set is
-                        decided, and you did not specify -n, will actually
-                        delete.
-  -n, --dry-run         When combined with -d, will only say what it would do.
-  --elect-one-random    Mark one KEEP, the rest DELEte. Easiest and most
-                        arbitrary.
-  --keep-path=KEEP_SUBSTR
-                        mark KEEP by absolute filename substring
-  --delete-path=DELE_SUBSTR
-                        mark DELEte by absolute filename substring
-```
-
-
-
 Example:
 ```
     $ duppy -s 500K -a 32M /dosgames
@@ -86,17 +51,53 @@ Example:
 
 Further example commands:
 
-* No shortcuts, just list what is duplicate:
+* Look at everything under a path:
 
         duppy .
+
+* When you have many files, e.g. checking all files over 20MB, then between 10MB and 20M, then 5MB and 10MB, etc. for a quicker indication of the largest savings (also makes it more likely that repeated runs on the same files is served from page cache, as we don't clobber it so quickly)
+
+        duppy -s 20M        /data/varied
+        duppy -s 10M -S 20M /data/varied
+        duppy -s 5M  -S 10M /data/varied
 
 * work on the the specific files we mention, and no recursion if that includes a directory
 
         duppy -R frames_*
 
-* When you have many files, e.g. checking all files between 15MB and 20M, then 5 and 15MB, etc. for faster results of just the larger files (also makes it more likely that repeated runs on the same files is served from RAM, and we don't clobber it so quickly)
 
-        duppy -s 15M -S 20M /data/varied
+Options
+===
+```
+Usage: duppy [options]
+
+Options:
+  -h, --help            show this help message and exit
+  -v VERBOSE            0 prints only summary, 1 (default) prints file sets
+  -R                    Default is recursive. Specify this (and files, e.g. *)
+                        to not recurse into directories.
+  -s MINSIZE            Minimum file size to include - because for small files we are seek-bound.
+                        Defaults to 1. Note that all bytesize arguments understand values like '10M'
+  -S MAXSIZE            Maximum file size to include. With -s allows working on ranges of sizes.
+  -a STOPSIZE           Assume a set is identical after this amount of data.
+                        Useful to avoid checking all of very large files, but
+                        be careful when cobmbining with -d
+  -b READSIZE           Inital read size, rounded to nearest KB. Defaults to
+                        32KB.
+  -m MAXREADSIZE        Chunks to read at a time once more checks out. Rounded
+                        to nearest KB. defaults to 256KB. Can be upped on RAID.
+  -d, --delete          Apply rules to figure out what to delete. If a set is
+                        decided, and you did not specify -n, will actually
+                        delete.
+  -n, --dry-run         When combined with -d, will only say what it would do.
+  --elect-one-random    Mark one KEEP, the rest DELEte. Easiest and most
+                        arbitrary.
+  --keep-path=KEEP_SUBSTR
+                        mark KEEP by absolute filename substring
+  --delete-path=DELE_SUBSTR
+                        mark DELEte by absolute filename substring
+```
+
 
 
 
