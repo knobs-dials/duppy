@@ -1,13 +1,13 @@
 duppy
 ================
 
-Duplicate file detection that checks blocks of content at a time. Motivated by the observation that unique files are usually unique in the first few dozen KB, so duplicate detection is often largely IO-bound. 
+Duplicate file detection
 
-Also only checks within file sets with the same size, to avoid including files that can't be exact content duplicates.
+Checks blocks of content at a time, with the idea that when you have a lot of large mostly-unique files, we can avoid reading most contents, as unique files are usually unique in the first few dozen KB 
 
-So if you have a lot of large mostly-unique files, we avoid reading most data. 
+That said, on a set of small files we save little, because (particularly on platter), avoiding being read-bound by being seek-bound instead is little improvement.
 
-(That said, on a set of small files we save little, and on platter drives this can become seek-bound instead)
+Only checks within file sets with the same size, to avoid including files that cannot be exact content duplicates. That can still help a bunch.
 
 
 Example:
