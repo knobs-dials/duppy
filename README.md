@@ -52,9 +52,13 @@ Example:
 
 Further example commands:
 
-* Look at everything under a path:
+* Look at everything under a path, recursively:
 
         duppy .
+
+* work on the the specific files we mention, and no recursion if that includes a directory
+
+        duppy -R frames_*
 
 * When you have many files, e.g. checking all files over 20MB, then between 10MB and 20M, then 5MB and 10MB, etc. for a quicker indication of the largest savings (also makes it more likely that repeated runs on the same files is served from page cache, as we don't clobber it so quickly)
 
@@ -62,9 +66,6 @@ Further example commands:
         duppy -s 10M -S 20M /data/varied
         duppy -s 5M  -S 10M /data/varied
 
-* work on the the specific files we mention, and no recursion if that includes a directory
-
-        duppy -R frames_*
 
 
 Options
