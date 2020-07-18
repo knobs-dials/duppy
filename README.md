@@ -3,11 +3,12 @@ duppy
 
 Duplicate file detection
 
-Checks blocks of content at a time, with the idea that when you have a lot of large mostly-unique files, we can avoid reading most contents, as unique files are usually unique in the first few dozen KB 
-
-That said, on a set of small files we save little, because (particularly on platter), avoiding being read-bound by being seek-bound instead is little improvement.
+Checks blocks of content at a time, with the idea that when you have a lot of large mostly-unique files, we can avoid reading most contents, as unique files are usually unique in the first few dozen kilobytes.
 
 Only checks within file sets with the same size, to avoid including files that cannot be exact content duplicates. That can still help a bunch.
+
+
+That said, in some cases, e.g. a large set of small files, we save little because (particularly on platter), avoiding being read-bound while becoming seek-bound instead is little improvement.  On SSD seeks are a lot cheaper so this is still better.
 
 
 Example:
