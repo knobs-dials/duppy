@@ -60,11 +60,11 @@ Further example commands:
 
         duppy -R frames_*
 
-* When you have many files, e.g. checking all files over 20MB, then between 10MB and 20M, then 5MB and 10MB, etc. for a quicker indication of the largest savings (also makes it more likely that repeated runs on the same files is served from page cache, as we don't clobber it so quickly)
+* When you have many files, e.g. checking all files over 200MB, then between 10MB and 200M, then 5MB and 10MB, etc. for a quicker indication of the largest savings first (working on smaller sets also makes it more likely that repeated runs on the same files is served from page cache, as we don't clobber it so quickly)
 
-        duppy -s 20M        /data/varied
-        duppy -s 10M -S 20M /data/varied
-        duppy -s 5M  -S 10M /data/varied
+        duppy -s 200M         /data/varied
+        duppy -s 10M  -S 200M /data/varied
+        duppy -s 5M  - S 10M  /data/varied
 
 
 
