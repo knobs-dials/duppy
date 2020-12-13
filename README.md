@@ -8,7 +8,10 @@ Within same-sized sets checks moderate-sized blocks of content at a time.
 
 When you have a lot of large mostly-unique files, we can avoid reading most contents, because most unique things are unique first few dozen kilobytes.
 
-That said, in some cases, e.g. a large set of small files, we save time or IO because (particularly on platter) we just become seek-bound instead of read-bound.  On SSD seeks are a lot cheaper so this is still better.
+
+That said, in some cases, e.g. a large set of small files, we save no time or IO because (particularly on platter) we just become seek-bound instead of read-bound. Might even be slightly worse.  On SSD seeks are a lot cheaper so this is still better.
+
+Also, a large set of large identical files will take all the reading to check. But seems a very unsual case.
 
 
 Example:
