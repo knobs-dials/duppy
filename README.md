@@ -3,14 +3,13 @@ duppy
 
 Duplicate file detection.
 
-Only checks within file sets with the same size, because when you have varied files we don't need to check some at all.
-For sets we need to check, reads moderate-sized blocks of content at a time.
+Only checks within file sets with the same size, because when you have varied files we don't need to touch a subset of files at.
 
-When you have a set of largeish, mostly-unique files, we can avoid reading most contents, because most unique files are unique first few dozen kilobytes.
+For sets we need to check, reads moderate-sized blocks of content at a time, because many unique files are unique in the first few dozen kilobytes and when you have a set of largeish, mostly-unique files, we can avoid reading most contents.
 
-That said, in some cases, e.g. a large set of small files, we save no time or IO because (particularly on platter drives) we just become seek-bound instead of read-bound. Might even be slightly worse.  On SSD seeks are a lot cheaper so this is still better. 
+That said, in some cases, e.g. a large set of small files, we save no time or IO because (particularly on platter drives) we just become seek-bound instead of read-bound. Might even be slightly worse.  On SSD seeks are cheap so this is still better.
 
-(Also, a large set of large identical files will take all the reading to check. But this seems unusual, and there's an option to help there)
+(Also, a set of identical files will take all the reading to check. But this seems unusual, and there's an option to help there)
 
 
 Example:
