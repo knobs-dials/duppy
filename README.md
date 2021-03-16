@@ -111,7 +111,7 @@ Notes / warnings:
 * safe around hardlinks in that it avoids adding the same inode twice. There is no space to be saved, and you're probably hardlinking for a reason. (We could still report them, though)
 
 * Skips symlinks - does not consider them to be files, so won't delete the links or consider their content.
-* ..but: it can still _break_ symlinks (and ensuring we won't would require scanning all mounted filesystems)
+* ..but: it can still _break_ symlinks because we don't know what links to the files weo're working on (and ensuring we won't would require scanning all mounted filesystems)
 
 
 
