@@ -1,5 +1,4 @@
 #!/usr/bin/python
-
 '''
     These functions take a set of (absolute) filenames,
     and decide which to keep and which to delete,
@@ -7,13 +6,10 @@
 
     This to be able to combine multiple rules sensibly.
 
-
     There is extra logic to actually deciding.
     - usually   you want to not do anything when all are DELE
     - sometimes you want to not do anything when there are any UNKN
 '''
-# avoid using globals, this is import *'d elsewhere
-
 import os
 import re
 import random
@@ -22,8 +18,6 @@ import random
 KEEP = 2
 DELE = 1
 UNKN = 0
-
-
 
     
 def choose_one_random(givenset, substr=None):
@@ -38,8 +32,6 @@ def choose_one_random(givenset, substr=None):
     return ret
 
 
-
-
 #def delete_default(givenset):
 #    ''' meant for "keep one, have the rest already marked for deleting" logic.
 #        Note that since we never choose to throw away everything, by itself this will result in undecided sets
@@ -47,10 +39,6 @@ def choose_one_random(givenset, substr=None):
 #    ret = {}
 #    for fn in givenset:
 #        ret[fn] = DELE
-
-
-
-
 
 
 def keep_path(givenset, substr=None):
@@ -73,7 +61,6 @@ def delete_path(givenset, substr=None, others=KEEP):
             ret[fn] = others
     return ret
 
-
 def keep_path_re(givenset, restr=None):
     ''' keep anything which matches the given regexp (uses re.search) '''
     ret = {}
@@ -95,7 +82,6 @@ def delete_path_re(givenset, restr=None, others=KEEP):
         else:
             ret[fn] = others
     return ret
-
 
 
 
@@ -125,8 +111,6 @@ def keep_deepest(givenset, others=DELE):
                 ret[fn] = others
     return ret
 
-
-
 def keep_shallowest(givenset, nonshallowest=DELE):
     ''' copy-paste-tweak of the above.  TODO: unify in a single function '''
     ret = {}
@@ -147,7 +131,6 @@ def keep_shallowest(givenset, nonshallowest=DELE):
     return ret
 
 
-
 def keep_longestpath(givenset, nondeepest=DELE):
     ''' Keep the file(s) with the longest path string length.
         TODO: make this consider unicode string length, not bytestring length.
@@ -165,7 +148,6 @@ def keep_longestpath(givenset, nondeepest=DELE):
             ret[fn]=nondeepest
     return ret
 
-
 def keep_longestbasename(givenset, nondeepest=DELE):
     ' TODO: make this consider unicode string length, not bytestring length '
     ret  = {}
@@ -182,7 +164,6 @@ def keep_longestbasename(givenset, nondeepest=DELE):
     return ret
 
     
-
 def keep_newest(givenset, nonnewest=DELE):
     ' Keep the file(s) with the most recent ctime/mtime '
     ret   = {}    
