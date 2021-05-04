@@ -9,47 +9,9 @@ For such same-sized sets we need to check, reads moderate-sized blocks of conten
 
 That said, in some cases, e.g. a large set of small files, we save no time or IO because (particularly on platter drives) we just become seek-bound instead of read-bound. Might even be slightly worse.  On SSD seeks are cheap so this is still better.
 
-<<<<<<< HEAD
-
-Options
-===
-```
-Usage: duppy [options]
-
-Options:
-  -h, --help            show this help message and exit
-  -v VERBOSE            0 prints only summary, 1 (default) prints file sets
-  -R                    Default is recursive. Specify this (and files, e.g. *)
-                        to not recurse into directories.
-  -s MINSIZE            Minimum file size to include - because for small files we are seek-bound.
-                        Defaults to 1. Note that all bytesize arguments understand values like '10M'
-  -S MAXSIZE            Maximum file size to include. With -s allows working on ranges of sizes.
-  -a STOPSIZE           Assume a set is identical after this amount of data.
-                        Useful to avoid checking all of very large files, but
-                        be careful when cobmbining with -d
-  -b READSIZE           Inital read size, rounded to nearest KB. Defaults to
-                        32KB.
-  -m MAXREADSIZE        Chunks to read at a time once more checks out. Rounded
-                        to nearest KB. defaults to 256KB. Can be higher on
-                        RAID.
-  -d, --delete          Apply rules to figure out what to delete. If a set is
-                        decided, and you did not specify -n, will actually
-                        delete.
-  -n, --dry-run         When combined with -d, will only say what it would do.
-  --elect-one-random    Mark one KEEP, the rest DELEte. Easiest and most
-                        arbitrary.
-  --keep-path=KEEP_SUBSTR
-                        mark KEEP by absolute filename substring
-  --delete-path=DELE_SUBSTR
-                        mark DELEte by absolute filename substring
-```
-
-=======
-(Also, a set of identical files will take all the reading to check. But this seems unusual, and there's an option to help there)
->>>>>>> 2981d28ee14a2e11fa94d7b3203aff55d64f5d31
-
 
 Example:
+===
 ```
     $ duppy -s 500K -a 32M /dosgames
 
