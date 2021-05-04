@@ -1,4 +1,4 @@
-#!/usr/bin/python -O
+#!/usr/bin/python2 -O
 """ Duplicate file finder via incremental content comparison.
     Usually reads <10% of the data, regularly <1%.
     Which mostly helps on larger files, because otherwise it *is* a whole bunch of seeks.
@@ -825,7 +825,7 @@ def main():
 
         
         
-    options, args = p.parse_args()  # defaults to parsing sys.argv[1:].  May exit the program.
+    options, args = p.parse_args()
     if options.verbose>=2:
         print 'all options:  %r'%options
         print 'args:         %r'%args
