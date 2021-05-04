@@ -1,14 +1,15 @@
 duppy
 ================
 
-Duplicate file detection by incrementally checking blocks of content, and only within file sets with the same size.
+Duplicate file detection.
 
-If you have a lot of largeish mostly-unique files, we avoid reading most data. ...though still seek a bunch,
-which is why on smaller files we don't save much, particularly on platter derives as that becomes seek-bound.
+Only checks within file sets with the same size, because that can exclude a bunch of files up front.
 
-Motivated by the observation that duplicate detection is largely IO-bound, and that unique files are usually unique in the first few dozen KB.
+For such same-sized sets we need to check, reads moderate-sized blocks of content at a time, because many unique files are unique in the first few dozen kilobytes, so when you have a set of largeish, mostly-unique files, we can avoid reading most contents.
 
+That said, in some cases, e.g. a large set of small files, we save no time or IO because (particularly on platter drives) we just become seek-bound instead of read-bound. Might even be slightly worse.  On SSD seeks are cheap so this is still better.
 
+<<<<<<< HEAD
 
 Options
 ===
@@ -43,6 +44,9 @@ Options:
                         mark DELEte by absolute filename substring
 ```
 
+=======
+(Also, a set of identical files will take all the reading to check. But this seems unusual, and there's an option to help there)
+>>>>>>> 2981d28ee14a2e11fa94d7b3203aff55d64f5d31
 
 
 Example:
@@ -86,7 +90,7 @@ Example:
 
 Further example commands:
 
-* No shortcuts, just list what is duplicate:
+* Look at everything under a path, recursively:
 
         duppy .
 
@@ -94,9 +98,48 @@ Further example commands:
 
         duppy -R frames_*
 
-* When you have many files, e.g. checking all files between 15MB and 20M, then 5 and 15MB, etc. for faster results of just the larger files (also makes it more likely that repeated runs on the same files is served from RAM, and we don't clobber it so quickly)
+* When you have many files, e.g. checking all files over 200MB, then between 10MB and 200M, then 5MB and 10MB, etc. for a quicker indication of the largest savings first 
 
-        duppy -s 15M -S 20M /data/varied
+        duppy -s 200M         /data/varied
+        duppy -s 10M  -S 200M /data/varied
+        duppy -s 5M  - S 10M  /data/varied
+        
+Working on smaller sets also makes it more likely that repeated runs on the same files is served from page cache, as we don't clobber it so quickly. This can be handy if you're dealing with the results manually. This is also why the largest files are last in the output.
+
+
+
+Options
+===
+```
+Usage: duppy [options]
+
+Options:
+  -h, --help            show this help message and exit
+  -v VERBOSE            0 prints only summary, 1 (default) prints file sets
+  -R                    Default is recursive. Specify this (and files, e.g. *)
+                        to not recurse into directories.
+  -s MINSIZE            Minimum file size to include - because for small files we are seek-bound.
+                        Defaults to 1. Note that all bytesize arguments understand values like '10M'
+  -S MAXSIZE            Maximum file size to include. With -s allows working on ranges of sizes.
+  -a STOPSIZE           Assume a set is identical after this amount of data.
+                        Useful to avoid checking all of very large files, but
+                        be careful when cobmbining with -d
+  -b READSIZE           Inital read size, rounded to nearest KB. Defaults to
+                        32KB.
+  -m MAXREADSIZE        Chunks to read at a time once more checks out. Rounded
+                        to nearest KB. defaults to 256KB. Can be upped on RAID.
+  -d, --delete          Apply rules to figure out what to delete. If a set is
+                        decided, and you did not specify -n, will actually
+                        delete.
+  -n, --dry-run         When combined with -d, will only say what it would do.
+  --elect-one-random    Mark one KEEP, the rest DELEte. Easiest and most
+                        arbitrary.
+  --keep-path=KEEP_SUBSTR
+                        mark KEEP by absolute filename substring
+  --delete-path=DELE_SUBSTR
+                        mark DELEte by absolute filename substring
+```
+
 
 
 
@@ -105,7 +148,7 @@ Notes / warnings:
 * safe around hardlinks in that it avoids adding the same inode twice. There is no space to be saved, and you're probably hardlinking for a reason. (We could still report them, though)
 
 * Skips symlinks - does not consider them to be files, so won't delete the links or consider their content.
-* ..but: it can still _break_ symlinks (and ensuring we won't would require scanning all mounted filesystems)
+* ..but: it can still _break_ symlinks because we don't know what links to the files weo're working on (and ensuring we won't would require scanning all mounted filesystems)
 
 
 
@@ -131,6 +174,8 @@ Delete logic
 
 TODO:
 =====
+* resolve symlink argument paths (only just noticed that)
+
 * rethink the delete rules. There's much more logic beneath all this, but it should be much simpler to understand before I put that back in
 * maybe rip out the rules after all? (I usually look at the output and delete manually)
 * maybe consider generating a ruleset based on common patterns in a set of files?
