@@ -81,7 +81,7 @@ class Indexer(object):
                 now = time.time()
                 if now - self.last_feedback > self.feedback_interval:
                     self.last_feedback = now
-                    self.print_callback( 'Scanning for files... %6d included, %s'%(self.nfiles,fn))
+                    self.print_callback( '%6d included,  scanning for files... %s'%(self.nfiles,fn))
 
             if isdir:
                 if (device,inode) in self.inodes: #although I don't think directory hardlinks are always allowed

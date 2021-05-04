@@ -29,7 +29,7 @@ Options:
   -b READSIZE           Inital read size, rounded to nearest KB. Defaults to
                         32KB.
   -m MAXREADSIZE        Chunks to read at a time once more checks out. Rounded
-                        to nearest KB. defaults to 256KB. Can be higer on
+                        to nearest KB. defaults to 256KB. Can be higher on
                         RAID.
   -d, --delete          Apply rules to figure out what to delete. If a set is
                         decided, and you did not specify -n, will actually
