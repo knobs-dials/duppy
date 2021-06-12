@@ -7,7 +7,7 @@ Only checks within file sets with the same size, because that can exclude a bunc
 
 So when you have a set of largeish, mostly-unique files, we can avoid reading most file data.
 
-That said, in some cases, e.g. a large set of small files, we save no time or IO because (particularly on platter drives) we just become seek-bound instead of read-bound. Might even be slightly worse.  On SSD seeks are cheap so this is still better.
+That said, cases like many same-sized files we save little IO, and a large set of small files we save no time or IO because (particularly on platter drives) we just become seek-bound instead of read-bound. Might even be slightly worse in a few cases.  On SSD seeks are cheap so this is still better.
 
 
 Example:
