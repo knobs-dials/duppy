@@ -8,9 +8,9 @@ Only checks within file sets with the same size, because that can exclude a bunc
 
 On a set of largeish, mostly-unique files, we can avoid reading most file data.
 
-Other cases don't save as much, e.g. 
-- for many same-sized files means we read the start of every one
-- for many small files we are more bound by filesystem calls, and/or (particularly on platter drives) we just become seek-bound instead of read-bound. Might even be slightly worse in a few cases.  On SSD seeks are cheap so this is still better.
+In other cases don't save as much, e.g.
+- for many same-sized files, we read the start of every one
+- for many tiny files we are more bound more by filesystem calls, and/or seeks (on platter drives more than on SSD).
 
 
 Example:
