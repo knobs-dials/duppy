@@ -1,14 +1,17 @@
 #!/usr/bin/python
 '''
-    These functions take a set of (absolute) filenames,
-    and decide which to keep and which to delete,
-    by returning a dict that maps every member to KEEP, DELE, or UNKN.
+    These functions are the various "decide which files to keep or delete" rules.
+    
+    Each takes a set of (absolute) filenames,
+      and decides for each which to keep and which to delete,
+      by returning a dict that maps every member to KEEP, DELE, or UNKN.
 
-    This to be able to combine multiple rules sensibly.
+    This also kelps combine multiple rules sensibly, 
+      because those are contants where max() and min() have uesful meaning.
 
-    There is extra logic to actually deciding.
-    - usually   you want to not do anything when all are DELE
-    - sometimes you want to not do anything when there are any UNKN
+    There is extra logic to actually deciding, like
+    - usually   you want to do nothing when all are marked DELE
+    - sometimes you want to do nothing when there are any  UNKN
 '''
 import os
 import re
