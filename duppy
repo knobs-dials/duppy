@@ -827,11 +827,11 @@ def main():
         
     options, args = p.parse_args()
     if options.verbose>=2:
-        print 'all options:  %r'%options
-        print 'args:         %r'%args
+        print('all options:  %r'%options)
+        print('args:         %r'%args)
 
     if len(args)==0:
-        print "\nERROR: Specify directories or files to work on"
+        print("\nERROR: Specify directories or files to work on")
 
         p.print_help()
         
@@ -983,9 +983,9 @@ Examples:
     try:
         d.work( quiet=(options.verbose==0) )
     except KeyboardInterrupt:
-        print "Ctrl-C, summarizing what we have so far..."
+        print( "Ctrl-C, summarizing what we have so far...")
         if delete:
-            print " (and skipping the delete pass)"
+            print( " (and skipping the delete pass)" )
             delete = False
         
     if options.verbose:
