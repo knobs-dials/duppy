@@ -141,18 +141,20 @@ TODO:
 * resolve arguments that are symlinks
 
 * rethink the delete rules. There's much more logic beneath all this, but it should be much simpler to understand before I put that back in
-* maybe rip out the rules after all? (I usually look at the output and delete manually)
-* maybe consider generating a ruleset based on common patterns in a set of files?
+  * maybe rip out the rules after all? (I usually look at the output and delete manually)
+  * maybe consider generating a ruleset based on common patterns in a set of files?
 
 * code cleanup
 
-* test on windows
-
-* More sanity checks
+* more sanity checks
 
 * regression tests
 
 * figure out why the 'total read' sum is incorrect
+
+* test on windows
+
+* see what link/inode stuff means when the underlying filesystem API is mapped to Windows's
 
 
 CONSIDERING:
