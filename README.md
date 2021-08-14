@@ -10,8 +10,8 @@ On a set of largeish, mostly-unique files, we can avoid reading most file conten
 
 In other cases don't save as much, e.g.
 - for many same-sized files, we read the start of every one
-- for many tiny files we are more bound more by filesystem calls, and/or seeks (on platter drives more than on SSD).
-- for many large identical files, we have to read all their contents (though this should be a rare case)
+- for many tiny files we are more bound more by filesystem calls, and on platter drives specifically seeks
+- for many large identical files, we have to read all their contents (though this should be a rare case, and arguably what you want it to do anyway)
 
 Example:
 ===
