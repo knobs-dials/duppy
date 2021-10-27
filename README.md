@@ -64,13 +64,12 @@ Further example commands:
 
         duppy -R frames_*
 
-* When you have many files, then consider checking size ranges may help, e.g. all files over 200MB, then between 10MB and 200M, then 5MB and 10MB, etc.
+* When you have many files, you can consider checking size ranges may help, e.g. all files over 200MB, then between 10MB and 200M, then 5MB and 10MB, etc. This gives you faster indication of large duplicates first. It also more likely that repeated runs on the same files is served from page cache, as we don't clobber it as quickly. 
 
         duppy -s 200M         /data/varied
         duppy -s 10M  -S 200M /data/varied
         duppy -s 5M  - S 10M  /data/varied
         
-This gives you faster indication of large duplicates first. It also more likely that repeated runs on the same files is served from page cache, as we don't clobber it so quickly. 
 
 
 Options
