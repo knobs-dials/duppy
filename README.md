@@ -9,7 +9,7 @@ Within those same-sized sets we need to check, we read small-to-moderate-sized b
 
 On a set of largeish, mostly-unique files, we can avoid reading most file contents.
 
-In other cases we don't save as much, e.g.
+That said, there are cases where this approach doesn't much, e.g.
 - for many same-sized files, we still read the start of every one
 - for many tiny files we are more bound more by filesystem calls, and on platter drives specifically seek speed
 - for many large identical files, we have to read all their contents (though this should be a rare case, and you would probably *want* that verification in this case)
