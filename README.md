@@ -171,3 +171,10 @@ CONSIDERING:
 
 * page-cache-non-clobbering (posix_fadvise(POSIX_FADV_DONTNEED), though it's only in os since py3.3)
 
+
+See also:
+=====
+* [rdfind](https://github.com/pauldreik/rdfind) has similar ideas on optimizating duplicate file finding, and more extensive actions
+
+
+
