@@ -174,7 +174,7 @@ CONSIDERING:
 
 See also:
 =====
-* [rdfind](https://github.com/pauldreik/rdfind) has similar ideas on optimizating duplicate file finding, and more extensive actions
+* [rdfind](https://github.com/pauldreik/rdfind) also eliminates a bunch of options up front and with minimal reading
 
 
 
