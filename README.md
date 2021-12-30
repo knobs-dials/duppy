@@ -5,7 +5,7 @@ Duplicate file detection.
 
 Only checks within file sets with the same size, because that can exclude ever reading a good portion of files.
 
-Within those same-sized sets we need to check, we read small-to-moderate-sized blocks of content at a time, because many unique files are unique in the first few dozen kilobytes.
+Within same-sized sets, we read small-to-moderate-sized blocks of content at a time, because many unique files are unique in the first few dozen kilobytes.
 
 On a set of largeish, mostly-unique files, we can avoid reading most file contents.
 
