@@ -3,16 +3,16 @@ duppy
 
 Duplicate file detection.
 
-Only checks within file sets with the same size, because that can exclude ever reading a good portion of files.
+Only checks within file sets with the same size, because we can a good portion of files before starting to read contents.
 
 Within same-sized sets, we read small-to-moderate-sized blocks of content at a time, because many unique files are unique in the first few dozen kilobytes.
 
 On a set of largeish, mostly-unique files, we can avoid reading most file contents.
 
 That said, there are cases where this approach doesn't much, e.g.
-- for many same-sized files, we still read the start of every one
-- for many tiny files we are more bound more by filesystem calls, and on platter drives specifically seek speed
-- for many large identical files, we have to read all their contents (though this should be a rare case, and you would probably *want* that verification in this case)
+- for many same-sized files, we don't eliminate any and still read the start of every one
+- for many tiny files we are more bound more by overhead in syscalls and filesystem, and on platter drives also underlying seek speed
+- for many large identical files, we have to read all their contents (though that's unavoidable, and generally rare)
 
 Example:
 ===
