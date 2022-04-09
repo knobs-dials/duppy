@@ -118,11 +118,11 @@ Notes / warnings:
 
 Delete logic
 =====
+* note -n, dry-run, which only tells you what it would do
+
 * There are some parameters that assist deleting files
 
-* which will refuse to delete every copy - but note that doesn't mean you can't make a mess for yourself
-
-* note also -n, dry-run, which only tells you what it would do
+* which will refuse to delete every copy (but you can still make a mess for yourself, e.g. deleting randomly from structured directories)
 
 * Example: If you find duplicates, and any of them is in a directory called justdownloaded, choose that to delete
 
