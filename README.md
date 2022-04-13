@@ -13,7 +13,7 @@ On a set of largeish, mostly-unique files, we end up reading no more than a few 
 That said, there are cases where this approach doesn't help much, e.g.
 - for many tiny files we are more bound more by overhead in syscalls and filesystem, and on platter drives also the underlying seek speed
 - for many same-sized files, we don't eliminate any up front, and still read the start of every one
-- for many large identical files, we have to read all their contents (though that's unavoidable with any method, and generally rare)
+- for many large identical files, we have to read all their contents (though that's unavoidable with any method that doesn't store anything, and generally rare)
 
 Example:
 ===
