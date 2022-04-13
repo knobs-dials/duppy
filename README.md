@@ -7,11 +7,11 @@ Only checks within file sets with the same size, because we can skip a good port
 
 Within same-sized sets, we read small-to-moderate-sized blocks of content at a time, because many unique files are unique in the first few dozen kilobytes.
 
-On a set of largeish, mostly-unique files, we can avoid reading most file contents.
+On a set of largeish, mostly-unique files, we end up reading no more than a few percent of the file contents.
 
 That said, there are cases where this approach doesn't much, e.g.
 - for many same-sized files, we don't eliminate any and still read the start of every one
-- for many tiny files we are more bound more by overhead in syscalls and filesystem, and on platter drives also underlying seek speed
+- for many tiny files we are more bound more by overhead in syscalls and filesystem, and on platter drives also the underlying seek speed
 - for many large identical files, we have to read all their contents (though that's unavoidable, and generally rare)
 
 Example:
