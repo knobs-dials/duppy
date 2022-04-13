@@ -8,6 +8,7 @@ Only checks within file sets with the same size, because we can skip a good port
 Within same-sized sets, we read small-to-moderate-sized blocks of content at a time, because many unique files are unique in the first few dozen kilobytes.
 
 On a set of largeish, mostly-unique files, we end up reading no more than a few percent of the file contents.
+<br/><br/> 
 
 That said, there are cases where this approach doesn't much, e.g.
 - for many same-sized files, we don't eliminate any and still read the start of every one
