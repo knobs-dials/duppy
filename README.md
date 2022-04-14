@@ -15,7 +15,52 @@ That said, there are cases where this approach doesn't help much, e.g.
 - for many same-sized files, we don't eliminate any up front, and still read the start of every one
 - for many large identical files, we have to read all their contents (though that's unavoidable with any method that doesn't store anything, and generally rare)
 
-Example:
+
+Notes / warnings:
+=====
+* safe around hardlinks, in that it avoids adding the same inode twice. There is no space to be saved, and you're probably hardlinking for a reason. (We could still report them, though)
+
+* Skips symlinks - does not consider them to be files, so won't delete the links or consider their content.
+* ..but: it can still _break_ symlinks, because we don't know what links to the files we're working on (and we couldn't without scanning absolutely all mounted filesystems)
+
+
+
+
+Options
+===
+```
+Usage: duppy [options]
+
+Options:
+  -h, --help            show this help message and exit
+  -v VERBOSE            0 prints only summary, 1 (default) prints file sets
+  -R                    Default is recursive. Specify this (and files, e.g. *)
+                        to not recurse into directories.
+  -s MINSIZE            Minimum file size to include - because for small files we are seek-bound.
+                        Defaults to 1. Note that all bytesize arguments understand values like '10M'
+  -S MAXSIZE            Maximum file size to include. With -s allows working on ranges of sizes.
+  -a STOPSIZE           Assume a set is identical after this amount of data.
+                        Useful to avoid checking all of very large files, but
+                        be careful when cobmbining with -d
+  -b READSIZE           Inital read size, rounded to nearest KB. Defaults to
+                        32KB.
+  -m MAXREADSIZE        Chunks to read at a time once more checks out. Rounded
+                        to nearest KB. defaults to 256KB. Can be upped on RAID.
+  -d, --delete          Apply rules to figure out what to delete. If a set is
+                        decided, and you did not specify -n, will actually
+                        delete.
+  -n, --dry-run         When combined with -d, will only say what it would do.
+  --elect-one-random    Mark one KEEP, the rest DELEte. Easiest and most
+                        arbitrary.
+  --keep-path=KEEP_SUBSTR
+                        mark KEEP by absolute filename substring
+  --delete-path=DELE_SUBSTR
+                        mark DELEte by absolute filename substring
+```
+
+
+
+Examples:
 ===
 ```
     $ duppy -s 500K -a 32M /dosgames
@@ -65,73 +110,59 @@ Further example commands:
 
         duppy -R frames_*
 
-* When you have many files, you can consider checking size ranges may help, e.g. all files over 200MB, then between 10MB and 200M, then 5MB and 10MB, etc. This gives you faster indication of large duplicates first. It also more likely that repeated runs on the same files is served from page cache, as we don't clobber it as quickly. 
+* When you have many files, you can consider checking size ranges may help, e.g. all files over 200MB, then between 10MB and 200M, then everything under 10MB. This gives you the large space savings first, and can make the data more likely to come from the page cache as we don't clobber it as quickly. 
 
         duppy -s 200M         /data/varied
         duppy -s 10M  -S 200M /data/varied
-        duppy -s 5M  - S 10M  /data/varied
+        duppy -S 10M  /data/varied
         
-
-
-Options
-===
-```
-Usage: duppy [options]
-
-Options:
-  -h, --help            show this help message and exit
-  -v VERBOSE            0 prints only summary, 1 (default) prints file sets
-  -R                    Default is recursive. Specify this (and files, e.g. *)
-                        to not recurse into directories.
-  -s MINSIZE            Minimum file size to include - because for small files we are seek-bound.
-                        Defaults to 1. Note that all bytesize arguments understand values like '10M'
-  -S MAXSIZE            Maximum file size to include. With -s allows working on ranges of sizes.
-  -a STOPSIZE           Assume a set is identical after this amount of data.
-                        Useful to avoid checking all of very large files, but
-                        be careful when cobmbining with -d
-  -b READSIZE           Inital read size, rounded to nearest KB. Defaults to
-                        32KB.
-  -m MAXREADSIZE        Chunks to read at a time once more checks out. Rounded
-                        to nearest KB. defaults to 256KB. Can be upped on RAID.
-  -d, --delete          Apply rules to figure out what to delete. If a set is
-                        decided, and you did not specify -n, will actually
-                        delete.
-  -n, --dry-run         When combined with -d, will only say what it would do.
-  --elect-one-random    Mark one KEEP, the rest DELEte. Easiest and most
-                        arbitrary.
-  --keep-path=KEEP_SUBSTR
-                        mark KEEP by absolute filename substring
-  --delete-path=DELE_SUBSTR
-                        mark DELEte by absolute filename substring
-```
-
-
-
-
-Notes / warnings:
-=====
-* safe around hardlinks, in that it avoids adding the same inode twice. There is no space to be saved, and you're probably hardlinking for a reason. (We could still report them, though)
-
-* Skips symlinks - does not consider them to be files, so won't delete the links or consider their content.
-* ..but: it can still _break_ symlinks because we don't know what links to the files weo're working on (and we couldn't, without scanning all mounted filesystems)
 
 
 
 Delete logic
 =====
-* note -n, dry-run, which only tells you what it would do
 
-* There are some parameters that assist deleting files
+I usually inspect and do `rm` manually.  That way mistakes are at least my own damn fault.
+<br/><br/>
 
-* which will refuse to delete every copy (but you can still make a mess for yourself, e.g. deleting randomly from structured directories)
+However, in some cases you can express bulk removal in rules, such as by path substring:
+    duppy . -d -n --keep-path=main_store/ --delete-path=just_downloaded/
 
-* Example: If you find duplicates, and any of them is in a directory called justdownloaded, choose that to delete
+The idea is that within each set of duplicates, rules set each file as DELETE, KEEP, or are left as UNKNOWN,
+and we only ever act on any that are fully decided.
 
-        duppy . -d -n --delete-path=/justdownloaded/
+Sets are then considered 
+* undecided if they have any UNKNOWNs - you probably want to tweak your rules, and/or leave this for a later pass
+* undecided if they have only files marked DELETE - we should always refuse to delete every copy
+* undecided if they have only files marked KEEP - could consider that decided to do nothing. Semantics.
+* decided if they have >1 KEEP and >1 DELETE and 0 UNKNOWNs
 
-* Example: If you find duplicates, keep a random one within the set.
+For example:
 
-        duppy . -d -n --elect-one-random /downloadedpictures/
+```
+DECIDED set
+For set (size 1173140):
+  KEEP  'fonts/googlefonts/apache/droidsansjapanese/DroidSansJapanese.ttf'
+  DELE  'fonts/unsorted/droid/DroidSansJapanese.ttf'
+
+Undecided set (only keeps)
+For set (size 742076):
+  KEEP  'fonts/mostlysil/CharisSILLiteracyAmArea-5.000/documentation/CharisSIL-features.pdf'
+  KEEP  'fonts/mostlysil/CharisSILMali-5.000/documentation/CharisSIL-features.pdf'
+  KEEP  'fonts/mostlysil/CharisSILAmArea-5.000/documentation/CharisSIL-features.pdf'
+
+DECIDED set
+For set (size 306788):
+  KEEP  'fonts/googlefonts/apache/notosans/src/NotoSans-Regular-orig.ttf'
+  DELE  'fonts/unsorted/noto/NotoSans-Regular.ttf'
+  KEEP  'fonts/Noto/NotoSans-Regular.ttf'
+  KEEP  'fonts/googlefonts/apache/notosans/NotoSans-Regular.ttf'
+```
+
+Notes:
+* you generally want to start with -d -n, where -n means dry-run, which only tells you what it would do (TODO: make dry run the default, and have a "yes actually do it, I know what I'm doing" option)
+
+* --elect-one-random is easy to run on an unstructured store. But keep in mind you can can easily make a mess for yourself when deleting randomly from structured directories.
 
 * Standard disclaimer: While I have done basic sanity tests, and am brave enough to run this on my own filesystem, you may want a backup and not run this on your only copy of something important.
 
@@ -139,10 +170,9 @@ Delete logic
 
 TODO:
 =====
-* resolve arguments that are symlinks
+* make dry run the default, and have a "yes actually do it, I know what I'm doing" option
 
-* rethink the delete rules. There's much more logic beneath all this, but it should be much simpler to understand before I put that back in
-  * maybe rip out the rules after all? (I usually look at the output and delete manually)
+* rethink the delete rules. There's much more logic beneath all this, but if it takes too much reading and thinkig for the person who wrote it, ehhh.
   * maybe consider generating a ruleset based on common patterns in a set of files?
 
 * code cleanup

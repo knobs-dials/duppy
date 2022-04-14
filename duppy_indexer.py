@@ -1,9 +1,7 @@
 #!/usr/bin/python
+''' Here for organization, not disentanglement.
 
-'''
-Here for organization, not disentanglement.
-
-TODO: do a proper 'output or not' thing - the newline printing assumes sameline() which makes no sense when you hand along nothing
+    TODO: do a proper 'output or not' thing - the newline printing assumes sameline() which makes no sense when you hand along nothing
 '''
 
 import time,os,stat,sys
