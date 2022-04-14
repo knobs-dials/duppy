@@ -119,16 +119,18 @@ Further example commands:
 
 
 
-Delete logic
+Optional: delete logic
 =====
 
 I usually inspect and do `rm` manually.  That way mistakes are at least my own damn fault.
 <br/><br/>
 
 However, in some cases you can express bulk removal in rules, such as by path substring:
-        duppy . -d -n --keep-path=main_store/ --delete-path=just_downloaded/
+```
+duppy . -d -n --keep-path=main_store/ --delete-path=just_downloaded/
+```
 
-The idea is that within each set of duplicates, rules set each file as DELETE, KEEP, or are left as UNKNOWN,
+The idea is that within each set of eventual duplicates, rules set each file as DELETE, KEEP, or are left as UNKNOWN,
 and we only ever act on any that are fully decided.
 
 Sets are then considered 
