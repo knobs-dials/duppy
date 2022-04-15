@@ -114,7 +114,7 @@ Further example commands:
 
         duppy -s 200M         /data/varied
         duppy -s 10M  -S 200M /data/varied
-        duppy -S 10M  /data/varied
+        duppy -S 10M          /data/varied
         
 
 
