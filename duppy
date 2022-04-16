@@ -164,16 +164,16 @@ class ExactDupes(Indexer):
         Wraps indexer class to add some state of our own.
     '''
     def __init__(self,
-                 # indexer stuff:
+                 # indexer
                  minlen=1, maxlen=None,
                  ignore_dirnames=(),
                  ignore_abspaths=(),
-                 # main work stuff
+                 follow_sym=False,
+                 # main work
                  stopsize=0,
-                 follow_sym=False, # indexer
                  verbose=False,
                  readsize=64*1024, maxreadsize=256*1024,
-                 # rule stuff
+                 # rule
                  delete=False, dry_run=True, rules=None):
         ''' The first few arguments are handed to the indexer.
               minlen allows checking for only larger files.   Default is 1 to ignore zero-length files.
@@ -264,7 +264,6 @@ class ExactDupes(Indexer):
                     percent,
                     time_left_str,
                     ))
-
                 
         try:
             keys_which_are_sizes = list(self.persize.keys())
@@ -351,7 +350,7 @@ class ExactDupes(Indexer):
                                         if d not in tempset:
                                             tempset[d] = []
                                         tempset[d].append(fn)
-                                    #Technically, there's also the len(d)<current_readsize case, currently included in the second.
+                                    #Technically, there's also the  len(d) < current_readsize  case, currently included in the second.
 
                             except (IOError, OSError) as e: # Most likely means that the open() failed, because file was moved/removed
                                 print( "Filesystem error (possibly a moved/deleted file?), abandoning set to be safe - %s"%str(e) )
@@ -363,8 +362,7 @@ class ExactDupes(Indexer):
 
                         # We've resorted workset into tempset
                         #  Now inspect how distinct things are, and create a new set for the next loop
-
-                        # anything that is now not unique  is copied from tempset to the next round's workset
+                        #  anything that is now not unique  is copied from tempset to the next round's workset
                         if self.verbose >= 3:
                             print("") # The number of buckets can vary
                             print( " After iteration %d     there are %d buckets    (after %d blocks, offset %d)"%(loopcounter, len(tempset),loopcounter, offset) )
@@ -447,14 +445,7 @@ class ExactDupes(Indexer):
                     for fileset in filesets:
                         sorted_set = sorted(fileset)
                         for fn in sorted_set:
-                            #This way so that it's easier to copy-paste spaced filenames for manual rm and such.
-                            # Should probably shell-escape this properly - I have the code somewhere, but this is good enough for most cases
                             print( shell_escape(fn) )
-                            #if "'" in fn:
-                            #    print( '"%s"'%fn )
-                            #else:
-                            #    print( "'%s'"%fn )
-
                         print( '' )
         
         print( "Summary: " )
@@ -467,7 +458,6 @@ class ExactDupes(Indexer):
             for fileset in filesets:
                 if len(fileset)==0:
                     continue
-                #print fileset
                 total_sets  += 1
                 total_files += len(fileset)
                 unnecessary_bytes += (len(fileset)-1)*size
@@ -617,7 +607,7 @@ class ExactDupes(Indexer):
 def main():
     
     #######################################################
-    # Figure out command line options
+    # Figure out and sanitize command line options
     from optparse import OptionParser
     p = OptionParser() # Has some options, but we're ignoring them here
 
@@ -652,18 +642,12 @@ def main():
                  dest="verbose", default=1,
                  help="-v 0 prints only summary and no duplicate file set, -v 1 (default) prints file sets, -v 2 gives more details and statistics, -v 3 is debug") 
 
-
-    
-    ### parsing and sanitizing
-    
     options, args = p.parse_args()
 
     if len(args) == 0:
         print("\nERROR: Specify directories and/or files to work on")
-
         p.print_help()
-        
-        print ('''\n        
+        print('''
 Examples:
   Just list what is duplicate
     duppy .
@@ -673,7 +657,7 @@ Examples:
 
   Work on the files in the current directory (specify files, and no recursion)
     duppy -R *
-        ''')
+''')
         sys.exit(-1)
 
         
@@ -696,8 +680,6 @@ Examples:
         maxlen = parse_kmg( options.maxsize )
     else:
         maxlen = None
-
-
 
         
     stopsize = parse_kmg( options.stopsize )
