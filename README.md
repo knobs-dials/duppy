@@ -3,7 +3,7 @@ duppy
 
 Duplicate file detection.
 
-Only checks within file sets with the same size, because we can skip a good portion of files before starting to read contents.
+Will only checks within file sets with the same size, because we can skip a good portion of files before starting to read contents.
 
 Within same-sized sets, we read small-to-moderate-sized blocks of content at a time, because many unique files are unique in the first few dozen kilobytes.
 
@@ -11,7 +11,7 @@ On a set of largeish, mostly-unique files, we end up reading no more than a few 
 <br/><br/> 
 
 That said, there are cases where this approach doesn't help much, e.g.
-- for many tiny files we actually read most data, in potentially about as many operations, and are more bound more by overhead in syscalls and filesystem, on platter drives also incurring more seek latency
+- for many tiny files we actually read most data, in potentially about as many operations, and are more bound more by overhead in syscalls and filesystem (also the initial treewalk), on platter drives also incurring more seek latency
 - for many same-sized files, we don't eliminate any up front, and still read the start of every one
 - for many large identical files, we have to read all their contents (though that's unavoidable with any method that doesn't store anything, and generally rare)
 
@@ -114,21 +114,23 @@ Further example commands:
 
         duppy -s 200M         /data/varied
         duppy -s 10M  -S 200M /data/varied
-        duppy -S 10M  /data/varied
+        duppy -S 10M          /data/varied
         
 
 
 
-Delete logic
+Optional: delete logic
 =====
 
 I usually inspect and do `rm` manually.  That way mistakes are at least my own damn fault.
 <br/><br/>
 
 However, in some cases you can express bulk removal in rules, such as by path substring:
-    duppy . -d -n --keep-path=main_store/ --delete-path=just_downloaded/
+```
+duppy . -d -n --keep-path=main_store/ --delete-path=just_downloaded/
+```
 
-The idea is that within each set of duplicates, rules set each file as DELETE, KEEP, or are left as UNKNOWN,
+The idea is that within each set of eventual duplicates, rules set each file as DELETE, KEEP, or are left as UNKNOWN,
 and we only ever act on any that are fully decided.
 
 Sets are then considered 
