@@ -20,8 +20,8 @@ Notes / warnings:
 =====
 * safe around hardlinks, in that it avoids adding the same inode twice. There is no space to be saved, and you're probably hardlinking for a reason. (We could still report them, though)
 
-* Skips symlinks - does not consider them to be files, so won't delete the links or consider their content.
-* ..but: it can still _break_ symlinks, because we don't know what links to the files we're working on (and we couldn't without scanning absolutely all mounted filesystems)
+* Skips symlinks - Again, no space to be saved, we we do not consider them to be files. (Also avoids is having to avoid potential symlink loops)
+  * note that we can can still _break_ symlinks, because we don't know what links to the files we're working on (and we couldn't without scanning absolutely all mounted filesystems)
 
 
 
@@ -170,6 +170,8 @@ Notes:
 
 TODO:
 =====
+* make sameline() test for ANSI capability intead of assuming it
+
 * make dry run the default, and have a "yes actually do it, I know what I'm doing" option
 
 * rethink the delete rules. There's much more logic beneath all this, but if it takes too much reading and thinkig for the person who wrote it, ehhh.
