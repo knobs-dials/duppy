@@ -130,14 +130,16 @@ However, in some cases you can express bulk removal in rules, such as by path su
 duppy . -d -n --keep-path=main_store/ --delete-path=just_downloaded/
 ```
 
-The idea is that within each set of eventual duplicates, rules set each file as DELETE, KEEP, or are left as UNKNOWN,
-and we only ever act on any that are fully decided.
+The idea is that 
+* within each set of duplicate files, each file has to be marked as DELETE, KEEP - or if no rule applies is left marked UNKNOWN.
 
-Sets are then considered 
-* undecided if they have any UNKNOWNs - you probably want to tweak your rules, and/or leave this for a later pass
-* undecided if they have only files marked DELETE - we should always refuse to delete every copy
-* undecided if they have only files marked KEEP - could consider that decided to do nothing. Semantics.
-* decided if they have >1 KEEP and >1 DELETE and 0 UNKNOWNs
+* We only ever act on any that are considered decided
+
+* Each set is considered 
+  * undecided if they have any UNKNOWNs - because you probably want to tweak your rules, and/or leave this for a later pass
+  * undecided if they have only files marked DELETE - we should always refuse to delete every copy
+  * undecided if they have only files marked KEEP - could consider that deciding to do nothing. Semantics.
+  * decided if they have >1 KEEP and >1 DELETE and 0 UNKNOWNs
 
 For example:
 
