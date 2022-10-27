@@ -110,7 +110,7 @@ Further example commands:
 
         duppy -R frames_*
 
-* When you have many files, you can consider checking size ranges may help, e.g. all files over 200MB, then between 10MB and 200M, then everything under 10MB. This gives you the large space savings first, and can make the data more likely to come from the page cache as we don't clobber it as quickly. 
+* When you have many files, you can consider checking size ranges may help, e.g. all files over 200MB, then between 10MB and 200M, then everything under 10MB. This gives you the large space savings first. Also, if you do repeat runs, this will serve a lot from page cache instead of disk. 
 
         duppy -s 200M         /data/varied
         duppy -s 10M  -S 200M /data/varied
