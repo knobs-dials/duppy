@@ -3,7 +3,7 @@ duppy
 
 Duplicate file detection.
 
-Will only checks within file sets with the same size, because we can skip a good portion of files before starting to read contents.
+Will only check within file sets with the same size, which can skip a good portion of files before starting to read contents.
 
 Within same-sized sets, we read small-to-moderate-sized blocks of content at a time, mostly because many unique files are unique in the first few dozen kilobytes, so most cases are decided with minimal reading.
 
