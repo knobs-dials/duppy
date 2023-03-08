@@ -131,15 +131,13 @@ duppy . -d -n --keep-path=main_store/ --delete-path=just_downloaded/
 ```
 
 The idea is that 
-* within each set of duplicate files, each file has to be marked as DELETE, KEEP - or if no rule applies is left marked UNKNOWN.
+* within each set of duplicate files, each file starts marked UNKNOWN, and has to be marked as DELETE, KEEP
 
-* We only ever act on any that are considered decided
-
-* Each set is considered 
+* We only ever act on any that are considered decided, and a set is considered
   * undecided if they have any UNKNOWNs - because you probably want to tweak your rules, and/or leave this for a later pass
   * undecided if they have only files marked DELETE - we should always refuse to delete every copy
   * undecided if they have only files marked KEEP - could consider that deciding to do nothing. Semantics.
-  * decided if they have >1 KEEP and >1 DELETE and 0 UNKNOWNs
+  * decided if they have >1 KEEP and >1 DELETE (and 0 UNKNOWNs)
 
 For example:
 
