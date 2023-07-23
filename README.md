@@ -193,6 +193,12 @@ TODO:
 
 
 CONSIDERING:
+* "don't cross device boundary" parameter
+
+* allow hardlinking duplicate files (that are on the same hardlink-supporting filesystem)
+
+* page-cache-non-clobbering (posix_fadvise(POSIX_FADV_DONTNEED), though it's only in os since py3.3)
+
 * storing a cache with (fullpath,mtime,size,hash(first64kB)) or so in your homedir,
   meaning that a slowly changing fileset could eliminate most cases from just that file,
   before they hit the fs tree.
@@ -201,10 +207,6 @@ CONSIDERING:
 * homedir config of permanent rules (for things like "always keep stuff from this dir")
 
 * progress bar, to give feedback when checking large files
-
-* allow hardlinking duplicate files (that are on the same hardlink-supporting filesystem)
-
-* page-cache-non-clobbering (posix_fadvise(POSIX_FADV_DONTNEED), though it's only in os since py3.3)
 
 
 See also:
