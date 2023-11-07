@@ -11,7 +11,8 @@ On a set of largeish, mostly-unique files, we end up reading no more than a few 
 <br/><br/> 
 
 That said, there are cases where this approach doesn't help much, e.g.
-- for sets of many tiny files we actually read most data, in potentially about as many operations, and are more bound more by overhead in syscalls and filesystem (also the initial treewalk), on platter drives also incurring more seek latency (on SSD it makes little difference)
+- for sets of many tiny files we actually read most data, in potentially about as many operations, and are more bound more by overhead in syscalls and filesystem (also the initial treewalk),
+  - matters more on platter drives, where you also incur more seek latency. On SSD this makes little difference.
 - for many same-sized files, we don't eliminate any up front, and still read the start of every one
 - for many large identical files, we have to read all their contents (though that's unavoidable with any method that doesn't store anything, and generally rare)
 
