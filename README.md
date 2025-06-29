@@ -11,10 +11,9 @@ On a set of largeish, mostly-unique files, we end up reading no more than a few 
 <br/><br/> 
 
 That said, there are cases where this approach doesn't help much, e.g.
-- for sets of many tiny files we actually read most data, in potentially about as many operations, and are more bound more by overhead in syscalls and filesystem (also the initial treewalk),
-  - matters more on platter drives, where you also incur more seek latency. On SSD this makes little difference.
+- for sets of many tiny files we still read most data, in approximately as many operations as we would with complete file hashes, and are more bound more by overhead in syscalls and filesystem (also the initial treewalk). For many small_ish_ files (where we need just a few reads per file) this might even be a little worse, especially on platter drives, where we might incur more seek latency. On SSD this makes little difference.
 - for many same-sized files, we don't eliminate any up front, and still read the start of every one
-- for many large identical files, we have to read all their contents (though that's unavoidable with any method that doesn't store anything, and generally rare)
+- for many large identical files, we have to read all their contents (though that's unavoidable with any method that doesn't store anything)
 
 
 Notes / warnings:
