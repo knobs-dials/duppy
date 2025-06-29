@@ -172,11 +172,11 @@ Notes:
 
 TODO:
 =====
-* make sameline() test for ANSI capability intead of assuming it
-
 * make dry run the default, and have a "yes actually do it, I know what I'm doing" option
 
-* rethink the delete rules. There's much more logic beneath all this, but if it takes too much reading and thinkig for the person who wrote it, ehhh.
+* make sameline() test for ANSI capability intead of assuming it
+
+* rethink the delete rules. There's much more logic beneath all this, but if it takes too much reading and thinking even for the person who wrote it, it's probably too complex.
   * maybe consider generating a ruleset based on common patterns in a set of files?
 
 * code cleanup
@@ -193,7 +193,7 @@ TODO:
 
 
 CONSIDERING:
-* "don't cross device boundary" parameter
+* "don't cross device boundary while finding files to include" parameter
 
 * allow hardlinking duplicate files (that are on the same hardlink-supporting filesystem)
 
